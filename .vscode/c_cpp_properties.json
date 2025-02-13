@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/**",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/nimble/host/include/host",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/porting/nimble/include/nimble",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/esp-hci/include",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/nimble/include/nimble",
+                "${workspaceFolder}/components/sensors/include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "compilerPath": "xtensa-esp32-elf-gcc.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}

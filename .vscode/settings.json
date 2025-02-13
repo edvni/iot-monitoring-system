@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "*.sqlbook": "sql",
+        "*.ndjson": "jsonl",
+        "*.dbclient-js": "javascript",
+        "esp_mac.h": "c",
+        "esp_bt_main.h": "c",
+        "nimble_port.h": "c",
+        "nimble_port_freertos.h": "c",
+        "ble_hs.h": "c",
+        "ble_svc_gap.h": "c"
+    }
+}

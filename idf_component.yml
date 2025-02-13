@@ -1,0 +1,4 @@
+dependencies:
+  nimble:
+    git: https://github.com/apache/mynewt-nimble.git
+    version: "1.4.0"

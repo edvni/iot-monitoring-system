@@ -1,0 +1,437 @@
+ets Jul ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:6276
+load:0x40078000,len:15716
+load:0x40080400,len:4
+ho 8 tail 4 room 4
+load:0x40080404,len:3860
+entry 0x4008063c
+[0;32mI (31) boot: ESP-IDF v5.4-dirty 2nd stage bootloader[0m
+[0;32mI (31) boot: compile time Feb 13 2025 17:53:27[0m
+[0;32mI (31) boot: Multicore bootloader[0m
+[0;32mI (33) boot: chip revision: v3.1[0m
+[0;32mI (36) boot.esp32: SPI Speed      : 40MHz[0m
+[0;32mI (39) boot.esp32: SPI Mode       : DIO[0m
+[0;32mI (43) boot.esp32: SPI Flash Size : 2MB[0m
+[0;32mI (47) boot: Enabling RNG early entropy source...[0m
+[0;32mI (51) boot: Partition Table:[0m
+[0;32mI (54) boot: ## Label            Usage          Type ST Offset   Length[0m
+[0;32mI (60) boot:  0 nvs              WiFi data        01 02 00009000 00006000[0m
+[0;32mI (66) boot:  1 phy_init         RF data          01 01 0000f000 00001000[0m
+[0;32mI (73) boot:  2 factory          factory app      00 00 00010000 00100000[0m
+[0;32mI (80) boot: End of partition table[0m
+[0;32mI (83) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=0e9ach ( 59820) map[0m
+[0;32mI (111) esp_image: segment 1: paddr=0001e9d4 vaddr=3ff80000 size=0001ch (    28) load[0m
+[0;32mI (111) esp_image: segment 2: paddr=0001e9f8 vaddr=3ffbdb60 size=01620h (  5664) load[0m
+[0;32mI (117) esp_image: segment 3: paddr=00020020 vaddr=400d0020 size=41138h (266552) map[0m
+[0;32mI (213) esp_image: segment 4: paddr=00061160 vaddr=3ffbf180 size=03584h ( 13700) load[0m
+[0;32mI (218) esp_image: segment 5: paddr=000646ec vaddr=40080000 size=17b1ch ( 97052) load[0m
+[0;32mI (268) boot: Loaded app from partition at offset 0x10000[0m
+[0;32mI (268) boot: Disabling RNG early entropy source...[0m
+[0;32mI (278) cpu_start: Multicore app[0m
+[0;32mI (287) cpu_start: Pro cpu start user code[0m
+[0;32mI (287) cpu_start: cpu freq: 160000000 Hz[0m
+[0;32mI (287) app_init: Application information:[0m
+[0;32mI (287) app_init: Project name:     sensor_project[0m
+[0;32mI (291) app_init: App version:      1[0m
+[0;32mI (295) app_init: Compile time:     Feb 13 2025 17:53:04[0m
+[0;32mI (300) app_init: ELF file SHA256:  503fe91e3...[0m
+[0;32mI (304) app_init: ESP-IDF:          v5.4-dirty[0m
+[0;32mI (308) efuse_init: Min chip rev:     v0.0[0m
+[0;32mI (312) efuse_init: Max chip rev:     v3.99 [0m
+[0;32mI (316) efuse_init: Chip rev:         v3.1[0m
+[0;32mI (320) heap_init: Initializing. RAM available for dynamic allocation:[0m
+[0;32mI (326) heap_init: At 3FFAFF10 len 000000F0 (0 KiB): DRAM[0m
+[0;32mI (331) heap_init: At 3FFB6388 len 00001C78 (7 KiB): DRAM[0m
+[0;32mI (336) heap_init: At 3FFB9A20 len 00004108 (16 KiB): DRAM[0m
+[0;32mI (342) heap_init: At 3FFC51C0 len 0001AE40 (107 KiB): DRAM[0m
+[0;32mI (347) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM[0m
+[0;32mI (352) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM[0m
+[0;32mI (358) heap_init: At 40097B1C len 000084E4 (33 KiB): IRAM[0m
+[0;32mI (365) spi_flash: detected chip: generic[0m
+[0;32mI (367) spi_flash: flash io: dio[0m
+[0;33mW (370) spi_flash: Detected size(4096k) larger than the size in the binary image header(2048k). Using the size in the binary image header.[0m
+[0;32mI (383) coexist: coex firmware version: 49a8cdc[0m
+[0;32mI (387) main_task: Started on CPU0[0m
+[0;32mI (397) main_task: Calling app_main()[0m
+[0;32mI (417) MAIN: Initializing RuuviTag scanner...[0m
+[0;32mI (417) SENSORS: Initializing NimBLE host stack[0m
+[0;32mI (417) BTDM_INIT: BT controller compile version [20b459d][0m
+[0;32mI (417) BTDM_INIT: Bluetooth MAC: 08:a6:f7:9e:b6:4a[0m
+[0;32mI (427) phy_init: phy_version 4840,02e0d70,Sep  2 2024,19:39:07[0m
+[0;32mI (737) SENSORS: BLE Host Task Started[0m
+[0;32mI (777) NimBLE: Failed to restore IRKs from store; status=8[0m
+
+[0;32mI (777) NimBLE: GAP procedure initiated: discovery; [0m
+[0;32mI (777) NimBLE: own_addr_type=0 filter_policy=0 passive=1 limited=0 filter_duplicates=0 [0m
+[0;32mI (777) NimBLE: duration=forever[0m
+[0;32mI (787) NimBLE: [0m
+
+[0;32mI (817) MAIN: RuuviTag data:[0m
+[0;32mI (827) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (827) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (827) MAIN:   Humidity: 25.98 %[0m
+[0;32mI (827) MAIN:   Timestamp: 0[0m
+[0;32mI (947) MAIN: RuuviTag data:[0m
+[0;32mI (947) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (947) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (947) MAIN:   Humidity: 26.77 %[0m
+[0;32mI (947) MAIN:   Timestamp: 0[0m
+[0;32mI (1117) MAIN: RuuviTag data:[0m
+[0;32mI (1117) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (1117) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (1117) MAIN:   Humidity: 26.97 %[0m
+[0;32mI (1117) MAIN:   Timestamp: 0[0m
+[0;32mI (1737) MAIN: Starting scan...[0m
+[1;31mE (1737) SENSORS: Error starting GAP discovery procedure; rc=2[0m
+[1;31mE (1737) MAIN: Failed to start scanning: -1[0m
+[0;32mI (1737) main_task: Returned from app_main()[0m
+[0;32mI (2097) MAIN: RuuviTag data:[0m
+[0;32mI (2097) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (2097) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (2097) MAIN:   Humidity: 25.96 %[0m
+[0;32mI (2107) MAIN:   Timestamp: 1[0m
+[0;32mI (2227) MAIN: RuuviTag data:[0m
+[0;32mI (2227) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (2227) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (2227) MAIN:   Humidity: 26.75 %[0m
+[0;32mI (2227) MAIN:   Timestamp: 1[0m
+[0;32mI (2397) MAIN: RuuviTag data:[0m
+[0;32mI (2397) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (2397) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (2397) MAIN:   Humidity: 26.97 %[0m
+[0;32mI (2397) MAIN:   Timestamp: 2[0m
+[0;32mI (3507) MAIN: RuuviTag data:[0m
+[0;32mI (3507) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (3507) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (3507) MAIN:   Humidity: 26.75 %[0m
+[0;32mI (3507) MAIN:   Timestamp: 3[0m
+[0;32mI (7247) MAIN: RuuviTag data:[0m
+[0;32mI (7247) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (7247) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (7247) MAIN:   Humidity: 25.97 %[0m
+[0;32mI (7247) MAIN:   Timestamp: 6[0m
+[0;32mI (7537) MAIN: RuuviTag data:[0m
+[0;32mI (7537) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (7537) MAIN:   Temperature: 24.65 °C[0m
+[0;32mI (7537) MAIN:   Humidity: 26.94 %[0m
+[0;32mI (7537) MAIN:   Timestamp: 7[0m
+[0;32mI (8817) MAIN: RuuviTag data:[0m
+[0;32mI (8817) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (8817) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (8817) MAIN:   Humidity: 26.93 %[0m
+[0;32mI (8817) MAIN:   Timestamp: 8[0m
+[0;32mI (9817) MAIN: RuuviTag data:[0m
+[0;32mI (9817) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (9817) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (9817) MAIN:   Humidity: 25.96 %[0m
+[0;32mI (9817) MAIN:   Timestamp: 9[0m
+[0;32mI (9927) MAIN: RuuviTag data:[0m
+[0;32mI (9927) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (9927) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (9927) MAIN:   Humidity: 26.78 %[0m
+[0;32mI (9927) MAIN:   Timestamp: 9[0m
+[0;32mI (10097) MAIN: RuuviTag data:[0m
+[0;32mI (10097) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (10097) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (10097) MAIN:   Humidity: 26.93 %[0m
+[0;32mI (10107) MAIN:   Timestamp: 9[0m
+[0;32mI (11097) MAIN: RuuviTag data:[0m
+[0;32mI (11097) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (11097) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (11097) MAIN:   Humidity: 25.96 %[0m
+[0;32mI (11107) MAIN:   Timestamp: 10[0m
+[0;32mI (11217) MAIN: RuuviTag data:[0m
+[0;32mI (11217) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (11217) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (11217) MAIN:   Humidity: 26.78 %[0m
+[0;32mI (11217) MAIN:   Timestamp: 10[0m
+[0;32mI (12497) MAIN: RuuviTag data:[0m
+[0;32mI (12497) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (12497) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (12507) MAIN:   Humidity: 26.75 %[0m
+[0;32mI (12507) MAIN:   Timestamp: 12[0m
+[0;32mI (15247) MAIN: RuuviTag data:[0m
+[0;32mI (15247) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (15247) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (15247) MAIN:   Humidity: 26.97 %[0m
+[0;32mI (15247) MAIN:   Timestamp: 14[0m
+[0;32mI (16527) MAIN: RuuviTag data:[0m
+[0;32mI (16527) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (16527) MAIN:   Temperature: 24.67 °C[0m
+[0;32mI (16527) MAIN:   Humidity: 27.03 %[0m
+[0;32mI (16527) MAIN:   Timestamp: 16[0m
+[0;32mI (17527) MAIN: RuuviTag data:[0m
+[0;32mI (17527) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (17527) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (17527) MAIN:   Humidity: 25.97 %[0m
+[0;32mI (17527) MAIN:   Timestamp: 17[0m
+[0;32mI (17647) MAIN: RuuviTag data:[0m
+[0;32mI (17647) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (17647) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (17647) MAIN:   Humidity: 26.80 %[0m
+[0;32mI (17647) MAIN:   Timestamp: 17[0m
+[0;32mI (17827) MAIN: RuuviTag data:[0m
+[0;32mI (17827) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (17827) MAIN:   Temperature: 24.67 °C[0m
+[0;32mI (17827) MAIN:   Humidity: 27.03 %[0m
+[0;32mI (17827) MAIN:   Timestamp: 17[0m
+[0;32mI (18817) MAIN: RuuviTag data:[0m
+[0;32mI (18817) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (18817) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (18817) MAIN:   Humidity: 25.97 %[0m
+[0;32mI (18817) MAIN:   Timestamp: 18[0m
+[0;32mI (18937) MAIN: RuuviTag data:[0m
+[0;32mI (18937) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (18937) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (18937) MAIN:   Humidity: 26.80 %[0m
+[0;32mI (18937) MAIN:   Timestamp: 18[0m
+[0;32mI (20097) MAIN: RuuviTag data:[0m
+[0;32mI (20097) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (20097) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (20097) MAIN:   Humidity: 25.96 %[0m
+[0;32mI (20097) MAIN:   Timestamp: 19[0m
+[0;32mI (20237) MAIN: RuuviTag data:[0m
+[0;32mI (20237) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (20237) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (20237) MAIN:   Humidity: 26.78 %[0m
+[0;32mI (20237) MAIN:   Timestamp: 19[0m
+[0;32mI (21507) MAIN: RuuviTag data:[0m
+[0;32mI (21507) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (21507) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (21507) MAIN:   Humidity: 26.78 %[0m
+[0;32mI (21507) MAIN:   Timestamp: 21[0m
+[0;32mI (24237) MAIN: RuuviTag data:[0m
+[0;32mI (24237) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (24237) MAIN:   Temperature: 24.65 °C[0m
+[0;32mI (24237) MAIN:   Humidity: 27.06 %[0m
+[0;32mI (24237) MAIN:   Timestamp: 23[0m
+[0;32mI (25237) MAIN: RuuviTag data:[0m
+[0;32mI (25237) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (25237) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (25237) MAIN:   Humidity: 26.00 %[0m
+[0;32mI (25237) MAIN:   Timestamp: 24[0m
+[0;32mI (25527) MAIN: RuuviTag data:[0m
+[0;32mI (25527) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (25527) MAIN:   Temperature: 24.65 °C[0m
+[0;32mI (25527) MAIN:   Humidity: 27.06 %[0m
+[0;32mI (25527) MAIN:   Timestamp: 25[0m
+[0;32mI (26517) MAIN: RuuviTag data:[0m
+[0;32mI (26517) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (26517) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (26517) MAIN:   Humidity: 26.00 %[0m
+[0;32mI (26517) MAIN:   Timestamp: 26[0m
+[0;32mI (26637) MAIN: RuuviTag data:[0m
+[0;32mI (26637) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (26637) MAIN:   Temperature: 24.65 °C[0m
+[0;32mI (26637) MAIN:   Humidity: 26.82 %[0m
+[0;32mI (26637) MAIN:   Timestamp: 26[0m
+[0;32mI (26807) MAIN: RuuviTag data:[0m
+[0;32mI (26807) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (26807) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (26807) MAIN:   Humidity: 27.03 %[0m
+[0;32mI (26807) MAIN:   Timestamp: 26[0m
+[0;32mI (27817) MAIN: RuuviTag data:[0m
+[0;32mI (27817) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (27817) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (27817) MAIN:   Humidity: 25.97 %[0m
+[0;32mI (27817) MAIN:   Timestamp: 27[0m
+[0;32mI (27927) MAIN: RuuviTag data:[0m
+[0;32mI (27927) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (27927) MAIN:   Temperature: 24.62 °C[0m
+[0;32mI (27927) MAIN:   Humidity: 26.81 %[0m
+[0;32mI (27927) MAIN:   Timestamp: 27[0m
+[0;32mI (28107) MAIN: RuuviTag data:[0m
+[0;32mI (28107) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (28107) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (28107) MAIN:   Humidity: 27.03 %[0m
+[0;32mI (28107) MAIN:   Timestamp: 27[0m
+[0;32mI (29217) MAIN: RuuviTag data:[0m
+[0;32mI (29217) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (29217) MAIN:   Temperature: 24.62 °C[0m
+[0;32mI (29217) MAIN:   Humidity: 26.81 %[0m
+[0;32mI (29217) MAIN:   Timestamp: 28[0m
+[0;32mI (31947) MAIN: RuuviTag data:[0m
+[0;32mI (31947) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (31947) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (31947) MAIN:   Humidity: 27.00 %[0m
+[0;32mI (31947) MAIN:   Timestamp: 31[0m
+[0;32mI (32937) MAIN: RuuviTag data:[0m
+[0;32mI (32937) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (32937) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (32937) MAIN:   Humidity: 25.95 %[0m
+[0;32mI (32937) MAIN:   Timestamp: 32[0m
+[0;32mI (33237) MAIN: RuuviTag data:[0m
+[0;32mI (33237) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (33237) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (33237) MAIN:   Humidity: 27.00 %[0m
+[0;32mI (33237) MAIN:   Timestamp: 32[0m
+[0;32mI (34227) MAIN: RuuviTag data:[0m
+[0;32mI (34227) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (34227) MAIN:   Temperature: 24.46 °C[0m
+[0;32mI (34227) MAIN:   Humidity: 25.95 %[0m
+[0;32mI (34237) MAIN:   Timestamp: 33[0m
+[0;32mI (34547) MAIN: RuuviTag data:[0m
+[0;32mI (34547) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (34547) MAIN:   Temperature: 24.65 °C[0m
+[0;32mI (34547) MAIN:   Humidity: 26.98 %[0m
+[0;32mI (34547) MAIN:   Timestamp: 34[0m
+[0;32mI (35517) MAIN: RuuviTag data:[0m
+[0;32mI (35517) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (35517) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (35517) MAIN:   Humidity: 25.98 %[0m
+[0;32mI (35527) MAIN:   Timestamp: 35[0m
+[0;32mI (35637) MAIN: RuuviTag data:[0m
+[0;32mI (35637) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (35637) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (35637) MAIN:   Humidity: 26.82 %[0m
+[0;32mI (35637) MAIN:   Timestamp: 35[0m
+[0;32mI (35807) MAIN: RuuviTag data:[0m
+[0;32mI (35807) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (35807) MAIN:   Temperature: 24.65 °C[0m
+[0;32mI (35817) MAIN:   Humidity: 26.98 %[0m
+[0;32mI (35817) MAIN:   Timestamp: 35[0m
+[0;32mI (36817) MAIN: RuuviTag data:[0m
+[0;32mI (36817) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (36817) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (36817) MAIN:   Humidity: 25.98 %[0m
+[0;32mI (36817) MAIN:   Timestamp: 36[0m
+[0;32mI (36937) MAIN: RuuviTag data:[0m
+[0;32mI (36937) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (36937) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (36937) MAIN:   Humidity: 26.82 %[0m
+[0;32mI (36947) MAIN:   Timestamp: 36[0m
+[0;32mI (38207) MAIN: RuuviTag data:[0m
+[0;32mI (38207) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (38207) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (38207) MAIN:   Humidity: 26.83 %[0m
+[0;32mI (38207) MAIN:   Timestamp: 37[0m
+[0;32mI (40947) MAIN: RuuviTag data:[0m
+[0;32mI (40947) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (40947) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (40947) MAIN:   Humidity: 27.00 %[0m
+[0;32mI (40947) MAIN:   Timestamp: 40[0m
+[0;32mI (41937) MAIN: RuuviTag data:[0m
+[0;32mI (41937) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (41937) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (41937) MAIN:   Humidity: 25.97 %[0m
+[0;32mI (41937) MAIN:   Timestamp: 41[0m
+[0;32mI (42227) MAIN: RuuviTag data:[0m
+[0;32mI (42227) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (42227) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (42227) MAIN:   Humidity: 26.99 %[0m
+[0;32mI (42227) MAIN:   Timestamp: 41[0m
+[0;32mI (43217) MAIN: RuuviTag data:[0m
+[0;32mI (43217) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (43217) MAIN:   Temperature: 24.44 °C[0m
+[0;32mI (43217) MAIN:   Humidity: 25.99 %[0m
+[0;32mI (43227) MAIN:   Timestamp: 42[0m
+[0;32mI (43337) MAIN: RuuviTag data:[0m
+[0;32mI (43347) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (43347) MAIN:   Temperature: 24.62 °C[0m
+[0;32mI (43347) MAIN:   Humidity: 26.82 %[0m
+[0;32mI (43347) MAIN:   Timestamp: 42[0m
+[0;32mI (43517) MAIN: RuuviTag data:[0m
+[0;32mI (43517) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (43517) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (43517) MAIN:   Humidity: 26.99 %[0m
+[0;32mI (43517) MAIN:   Timestamp: 43[0m
+[0;32mI (44517) MAIN: RuuviTag data:[0m
+[0;32mI (44517) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (44517) MAIN:   Temperature: 24.44 °C[0m
+[0;32mI (44517) MAIN:   Humidity: 25.99 %[0m
+[0;32mI (44517) MAIN:   Timestamp: 44[0m
+[0;32mI (47197) MAIN: RuuviTag data:[0m
+[0;32mI (47197) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (47197) MAIN:   Temperature: 24.62 °C[0m
+[0;32mI (47197) MAIN:   Humidity: 26.84 %[0m
+[0;32mI (47207) MAIN:   Timestamp: 46[0m
+[0;32mI (49937) MAIN: RuuviTag data:[0m
+[0;32mI (49937) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (49937) MAIN:   Temperature: 24.67 °C[0m
+[0;32mI (49937) MAIN:   Humidity: 27.00 %[0m
+[0;32mI (49937) MAIN:   Timestamp: 49[0m
+[0;32mI (51237) MAIN: RuuviTag data:[0m
+[0;32mI (51237) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (51237) MAIN:   Temperature: 24.67 °C[0m
+[0;32mI (51237) MAIN:   Humidity: 27.00 %[0m
+[0;32mI (51237) MAIN:   Timestamp: 50[0m
+[0;32mI (52237) MAIN: RuuviTag data:[0m
+[0;32mI (52237) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (52237) MAIN:   Temperature: 24.44 °C[0m
+[0;32mI (52237) MAIN:   Humidity: 26.00 %[0m
+[0;32mI (52237) MAIN:   Timestamp: 51[0m
+[0;32mI (52347) MAIN: RuuviTag data:[0m
+[0;32mI (52347) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (52347) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (52347) MAIN:   Humidity: 26.86 %[0m
+[0;32mI (52347) MAIN:   Timestamp: 51[0m
+[0;32mI (52517) MAIN: RuuviTag data:[0m
+[0;32mI (52517) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (52517) MAIN:   Temperature: 24.67 °C[0m
+[0;32mI (52517) MAIN:   Humidity: 27.00 %[0m
+[0;32mI (52517) MAIN:   Timestamp: 52[0m
+[0;32mI (53507) MAIN: RuuviTag data:[0m
+[0;32mI (53507) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (53507) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (53507) MAIN:   Humidity: 26.00 %[0m
+[0;32mI (53507) MAIN:   Timestamp: 53[0m
+[0;32mI (53627) MAIN: RuuviTag data:[0m
+[0;32mI (53627) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (53627) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (53627) MAIN:   Humidity: 26.86 %[0m
+[0;32mI (53627) MAIN:   Timestamp: 53[0m
+[0;32mI (54907) MAIN: RuuviTag data:[0m
+[0;32mI (54907) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (54907) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (54907) MAIN:   Humidity: 26.86 %[0m
+[0;32mI (54907) MAIN:   Timestamp: 54[0m
+[0;32mI (58637) MAIN: RuuviTag data:[0m
+[0;32mI (58637) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (58637) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (58637) MAIN:   Humidity: 26.02 %[0m
+[0;32mI (58637) MAIN:   Timestamp: 58[0m
+[0;32mI (58927) MAIN: RuuviTag data:[0m
+[0;32mI (58927) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (58927) MAIN:   Temperature: 24.65 °C[0m
+[0;32mI (58937) MAIN:   Humidity: 27.02 %[0m
+[0;32mI (58937) MAIN:   Timestamp: 58[0m
+[0;32mI (59927) MAIN: RuuviTag data:[0m
+[0;32mI (59927) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (59927) MAIN:   Temperature: 24.45 °C[0m
+[0;32mI (59927) MAIN:   Humidity: 26.02 %[0m
+[0;32mI (59927) MAIN:   Timestamp: 59[0m
+[0;32mI (60047) MAIN: RuuviTag data:[0m
+[0;32mI (60047) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (60047) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (60047) MAIN:   Humidity: 26.85 %[0m
+[0;32mI (60047) MAIN:   Timestamp: 59[0m
+[0;32mI (60217) MAIN: RuuviTag data:[0m
+[0;32mI (60217) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (60217) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (60217) MAIN:   Humidity: 27.01 %[0m
+[0;32mI (60217) MAIN:   Timestamp: 59[0m
+[0;32mI (61327) MAIN: RuuviTag data:[0m
+[0;32mI (61327) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (61327) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (61327) MAIN:   Humidity: 26.85 %[0m
+[0;32mI (61327) MAIN:   Timestamp: 60[0m
+[0;32mI (61497) MAIN: RuuviTag data:[0m
+[0;32mI (61497) MAIN:   MAC: C6:31:F5:29:52:73[0m
+[0;32mI (61497) MAIN:   Temperature: 24.66 °C[0m
+[0;32mI (61497) MAIN:   Humidity: 27.01 %[0m
+[0;32mI (61497) MAIN:   Timestamp: 61[0m
+[0;32mI (62517) MAIN: RuuviTag data:[0m
+[0;32mI (62517) MAIN:   MAC: DB:C3:58:D9:03:70[0m
+[0;32mI (62517) MAIN:   Temperature: 24.44 °C[0m
+[0;32mI (62517) MAIN:   Humidity: 26.01 %[0m
+[0;32mI (62517) MAIN:   Timestamp: 62[0m
+[0;32mI (62617) MAIN: RuuviTag data:[0m
+[0;32mI (62617) MAIN:   MAC: EE:C4:12:FD:CA:DF[0m
+[0;32mI (62617) MAIN:   Temperature: 24.64 °C[0m
+[0;32mI (62617) MAIN:   Humidity: 26.85 %[0m
+[0;32mI (62627) MAIN:   Timestamp: 62[0m
