@@ -5,6 +5,10 @@
         "*.sqlbook": "sql",
         "*.ndjson": "jsonl",
         "*.dbclient-js": "javascript",
-        "esp_sleep.h": "c"
+        "esp_sleep.h": "c",
+        "freertos.h": "c",
+        "task.h": "c",
+        "storage.h": "c",
+        "nvs_flash.h": "c"
     }
 }

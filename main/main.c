@@ -4,18 +4,17 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "sensors.h"
+#include "storage.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_sleep.h"
 #include "esp_mac.h"
 #include "esp_pm.h"
-#include "esp32/pm.h"
 
-#define TIME_TO_SLEEP    600        
-#define SECONDS_PER_DAY  86400      
-#define uS_TO_S_FACTOR   1000000ULL 
+#define TIME_TO_SLEEP    600        // Time in seconds to go to sleep        
+#define SECONDS_PER_DAY  86400      // 24 hours in seconds
+#define uS_TO_S_FACTOR   1000000ULL // Conversion factor for micro seconds to seconds
 
-RTC_DATA_ATTR static uint32_t boot_count = 0;
 static const char *TAG = "MAIN";
 
 static volatile bool data_received = false;  // Flag for data received
@@ -31,7 +30,17 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
 }
 
 void app_main(void)
-{       
+{   // Storage initialization  
+    ESP_ERROR_CHECK(storage_init());
+
+    // Increment and save the counter
+    ESP_ERROR_CHECK(storage_increment_boot_count());
+
+    // Get current value for output
+    uint32_t boot_count = storage_get_boot_count();
+    ESP_LOGI(TAG, "Boot count: %" PRIu32, boot_count);
+
+
     esp_err_t ret;
     data_received = false;
 
