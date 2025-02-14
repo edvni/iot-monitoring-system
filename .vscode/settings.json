@@ -1,13 +1,10 @@
 {
+    "idf.espIdfPathWin": "c:\\Users\\vdis0\\esp\\esp-idf-v5.4",
+    "idf.toolsPathWin": "c:\\Users\\vdis0\\.espressif",
     "files.associations": {
         "*.sqlbook": "sql",
         "*.ndjson": "jsonl",
         "*.dbclient-js": "javascript",
-        "esp_mac.h": "c",
-        "esp_bt_main.h": "c",
-        "nimble_port.h": "c",
-        "nimble_port_freertos.h": "c",
-        "ble_hs.h": "c",
-        "ble_svc_gap.h": "c"
+        "esp_sleep.h": "c"
     }
 }

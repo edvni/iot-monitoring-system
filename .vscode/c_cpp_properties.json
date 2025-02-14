@@ -1,22 +1,23 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "ESP-IDF",
             "includePath": [
                 "${workspaceFolder}/**",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/**",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/nimble/host/include/host",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/porting/nimble/include/nimble",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/esp-hci/include",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/nimble/include/nimble",
+                "C:/Users/vdis0/esp/esp-idf-v5.4/components/**",
+                "C:/Users/vdis0/esp/esp-idf-v5.4/components/bt/host/nimble/nimble/porting/nimble/include",
+                "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/14.2.0/include",
+                "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/xtensa-esp-elf/include",
                 "${workspaceFolder}/components/sensors/include"
             ],
             "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE"
+                "ESP_PLATFORM",
+                "IDF_VER=\"v5.4\"",
+                "XTENSA",
+                "_GNU_SOURCE",
+                "configTICK_RATE_HZ=1000"
             ],
-            "compilerPath": "xtensa-esp32-elf-gcc.exe",
+            "compilerPath": "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc.exe",
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "gcc-x64"
