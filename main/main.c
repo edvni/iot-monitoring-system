@@ -8,19 +8,16 @@
 #include "freertos/task.h"
 #include "esp_sleep.h"
 #include "esp_mac.h"
+#include "esp_pm.h"
+#include "esp32/pm.h"
 
+#define TIME_TO_SLEEP    600        
+#define SECONDS_PER_DAY  86400      
+#define uS_TO_S_FACTOR   1000000ULL 
 
-#define TIME_TO_SLEEP    600        // 10 minutes in seconds
-#define SECONDS_PER_DAY  86400      // 24 hours * 60 minutes * 60 seconds
-#define uS_TO_S_FACTOR   1000000ULL // Conversion factor for micro seconds to seconds
-
-
-// Variable in RTC memory for time counting
 RTC_DATA_ATTR static uint32_t boot_count = 0;
-
 static const char *TAG = "MAIN";
 
-// Callback function for receiving data from RuuviTag
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
     ESP_LOGI(TAG, "RuuviTag data:");
     ESP_LOGI(TAG, "  MAC: %s", measurement->mac_address);
@@ -31,8 +28,25 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
 
 void app_main(void)
 {       
+    esp_err_t ret;
 
-    esp_err_t ret = nvs_flash_init();
+    // Настройка управления питанием
+    #ifdef CONFIG_PM_ENABLE
+        esp_pm_config_t pm_config = {
+            .max_freq_mhz = 80,        
+            .min_freq_mhz = 40,        
+            .light_sleep_enable = false 
+        };
+        
+        ret = esp_pm_configure(&pm_config);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Power management configuration failed");
+        } else {
+            ESP_LOGI(TAG, "Power management configured with max frequency: %d MHz", pm_config.max_freq_mhz);
+        }
+    #endif
+
+    ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
@@ -47,20 +61,19 @@ void app_main(void)
     if (boot_count * TIME_TO_SLEEP >= SECONDS_PER_DAY) {
         ESP_LOGI(TAG, "24 hours passed, resetting counter");
         boot_count = 0;
-        // TODO: Reset counter in RTC memory
     }
 
     // Initialize BLE scanner for RuuviTag
     ESP_LOGI(TAG, "Initializing RuuviTag scanner...");
     ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
 
-    // Give some time for scanning (e.g. 15 seconds)
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    // Give some time for scanning
+    vTaskDelay(500);
 
     // Deinitialize BLE before going to sleep
     sensors_deinit();
 
-    // Set timer to wake up after TIME_TO_SLEEP seconds
+    // Set timer to wake up
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     ESP_LOGI(TAG, "Going to sleep for %d seconds", TIME_TO_SLEEP);
 
