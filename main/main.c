@@ -18,19 +18,24 @@
 RTC_DATA_ATTR static uint32_t boot_count = 0;
 static const char *TAG = "MAIN";
 
+static volatile bool data_received = false;  // Flag for data received
+
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
     ESP_LOGI(TAG, "RuuviTag data:");
     ESP_LOGI(TAG, "  MAC: %s", measurement->mac_address);
     ESP_LOGI(TAG, "  Temperature: %.2f °C", measurement->temperature);
     ESP_LOGI(TAG, "  Humidity: %.2f %%", measurement->humidity);
     ESP_LOGI(TAG, "  Timestamp: %llu", measurement->timestamp);
+
+    data_received = true; // Set the flag
 }
 
 void app_main(void)
 {       
     esp_err_t ret;
+    data_received = false;
 
-    // Настройка управления питанием
+    // Setting power management
     #ifdef CONFIG_PM_ENABLE
         esp_pm_config_t pm_config = {
             .max_freq_mhz = 80,        
@@ -67,11 +72,22 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing RuuviTag scanner...");
     ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
 
-    // Give some time for scanning
-    vTaskDelay(500);
+    // Ждем получения данных или таймаута
+    const int MAX_WAIT_TIME_MS = 5000;  // 5 секунд максимум
+    int waited_ms = 0;
+    const int CHECK_INTERVAL_MS = 500;   // Проверяем каждые 500 мс
+
+    while (!data_received && waited_ms < MAX_WAIT_TIME_MS) {
+        vTaskDelay(CHECK_INTERVAL_MS / 10);  // делим на 10 так как 1 тик = 10мс
+        waited_ms += CHECK_INTERVAL_MS;
+    } 
 
     // Deinitialize BLE before going to sleep
     sensors_deinit();
+
+    if (!data_received) {
+        ESP_LOGW(TAG, "No data received within timeout period");
+    }
 
     // Set timer to wake up
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
