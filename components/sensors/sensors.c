@@ -19,8 +19,8 @@ static const uint8_t RUUVI_RAW_V2 = 0x05;
 
 // NimBLE scan parameters
 static struct ble_gap_disc_params scan_params = {
-    .itvl = BLE_GAP_SCAN_ITVL_MS(100),      // 100ms scan interval
-    .window = BLE_GAP_SCAN_WIN_MS(50),       // 50ms scan window
+    .itvl = BLE_GAP_SCAN_ITVL_MS(1000),      // 1000ms scan interval
+    .window = BLE_GAP_SCAN_WIN_MS(500),       // 5000ms scan window
     .filter_policy = 0,                      // No filter policy
     .limited = 0,                            // Not limited discovery
     .passive = 1,                            // Passive scanning
@@ -64,14 +64,17 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
                                 event->disc.addr.val[3], event->disc.addr.val[2],
                                 event->disc.addr.val[1], event->disc.addr.val[0]);
                         
-                        // Parse measurement data (manufacturer specific data without company id)
+                    // Check if this is our target RuuviTag
+                    if (strcmp(measurement.mac_address, TARGET_MAC) == 0) {
+                        // Parse measurement data
                         parse_ruuvi_data(fields.mfg_data + 2, fields.mfg_data_len - 2, &measurement);
                         
                         // Set timestamp
-                        measurement.timestamp = esp_timer_get_time() / 1000000; // Convert to seconds
+                        measurement.timestamp = esp_timer_get_time() / 1000000;
                         
                         // Call user callback
                         measurement_callback(&measurement);
+                    }
                     }
                 }
             }
