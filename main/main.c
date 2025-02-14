@@ -72,13 +72,13 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing RuuviTag scanner...");
     ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
 
-    // Ждем получения данных или таймаута
-    const int MAX_WAIT_TIME_MS = 5000;  // 5 секунд максимум
+    // Wait for data or timeout
+    const int MAX_WAIT_TIME_MS = 5000;  // 5 seconds maximum
     int waited_ms = 0;
-    const int CHECK_INTERVAL_MS = 500;   // Проверяем каждые 500 мс
+    const int CHECK_INTERVAL_MS = 500;   // Check every 500 ms
 
     while (!data_received && waited_ms < MAX_WAIT_TIME_MS) {
-        vTaskDelay(CHECK_INTERVAL_MS / 10);  // делим на 10 так как 1 тик = 10мс
+        vTaskDelay(CHECK_INTERVAL_MS / 10);  //devide by 10 because 1 tick = 10ms
         waited_ms += CHECK_INTERVAL_MS;
     } 
 
