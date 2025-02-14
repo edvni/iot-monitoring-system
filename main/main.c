@@ -5,6 +5,7 @@
 #include "nvs_flash.h"
 #include "sensors.h"
 #include "storage.h"
+#include "power_management.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_sleep.h"
@@ -30,52 +31,25 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
 }
 
 void app_main(void)
-{   // Storage initialization  
+{   
+    // Power management initialization
+    ESP_ERROR_CHECK(power_management_init());
+    
+    // Storage initialization  
     ESP_ERROR_CHECK(storage_init());
 
     // Increment and save the counter
     ESP_ERROR_CHECK(storage_increment_boot_count());
 
+    // Check and reset counter if 24 hours passed
+    ESP_ERROR_CHECK(storage_check_and_reset_counter(TIME_TO_SLEEP));
+
     // Get current value for output
     uint32_t boot_count = storage_get_boot_count();
     ESP_LOGI(TAG, "Boot count: %" PRIu32, boot_count);
 
-
-    esp_err_t ret;
     data_received = false;
 
-    // Setting power management
-    #ifdef CONFIG_PM_ENABLE
-        esp_pm_config_t pm_config = {
-            .max_freq_mhz = 80,        
-            .min_freq_mhz = 40,        
-            .light_sleep_enable = false 
-        };
-        
-        ret = esp_pm_configure(&pm_config);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Power management configuration failed");
-        } else {
-            ESP_LOGI(TAG, "Power management configured with max frequency: %d MHz", pm_config.max_freq_mhz);
-        }
-    #endif
-
-    ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    // Increment boot counter
-    boot_count++;
-    ESP_LOGI(TAG, "Boot count: %" PRIu32, boot_count); 
-
-    // Check if 24 hours have passed
-    if (boot_count * TIME_TO_SLEEP >= SECONDS_PER_DAY) {
-        ESP_LOGI(TAG, "24 hours passed, resetting counter");
-        boot_count = 0;
-    }
 
     // Initialize BLE scanner for RuuviTag
     ESP_LOGI(TAG, "Initializing RuuviTag scanner...");
@@ -87,7 +61,7 @@ void app_main(void)
     const int CHECK_INTERVAL_MS = 500;   // Check every 500 ms
 
     while (!data_received && waited_ms < MAX_WAIT_TIME_MS) {
-        vTaskDelay(CHECK_INTERVAL_MS / 10);  //devide by 10 because 1 tick = 10ms
+        vTaskDelay(CHECK_INTERVAL_MS / 10);  // devide by 10 because 1 tick = 10ms
         waited_ms += CHECK_INTERVAL_MS;
     } 
 
