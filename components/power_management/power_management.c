@@ -5,11 +5,12 @@
 
 static const char *TAG = "POWER_MANAGEMENT";
 
+// Initialize power management
 esp_err_t power_management_init(void) {
     #ifdef CONFIG_PM_ENABLE
         esp_pm_config_t pm_config = {
-            .max_freq_mhz = 80,        
-            .min_freq_mhz = 40,        
+            .max_freq_mhz = 80,  // Maximum CPU frequency      
+            .min_freq_mhz = 40,  // Minimum CPU frequency      
             .light_sleep_enable = false  
         };
         

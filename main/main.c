@@ -15,9 +15,9 @@
 #define TIME_TO_SLEEP    600        // Time in seconds to go to sleep        
 #define SECONDS_PER_DAY  86400      // 24 hours in seconds
 #define uS_TO_S_FACTOR   1000000ULL // Conversion factor for micro seconds to seconds
+#define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 
 static const char *TAG = "MAIN";
-
 static volatile bool data_received = false;  // Flag for data received
 
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
@@ -26,6 +26,12 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
     ESP_LOGI(TAG, "  Temperature: %.2f °C", measurement->temperature);
     ESP_LOGI(TAG, "  Humidity: %.2f %%", measurement->humidity);
     ESP_LOGI(TAG, "  Timestamp: %llu", measurement->timestamp);
+
+    // Save measurement to SPIFFS
+    esp_err_t ret = storage_save_measurement(measurement);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save measurement");
+    }
 
     data_received = true; // Set the flag
 }
@@ -48,22 +54,42 @@ void app_main(void)
     uint32_t boot_count = storage_get_boot_count();
     ESP_LOGI(TAG, "Boot count: %" PRIu32, boot_count);
 
+    // Clear measurements at the start of new day
+    if (boot_count == 1) {
+        esp_err_t ret = storage_clear_measurements();
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Daily measurements reset");
+        }
+    }
+    
     data_received = false;
-
 
     // Initialize BLE scanner for RuuviTag
     ESP_LOGI(TAG, "Initializing RuuviTag scanner...");
     ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
 
     // Wait for data or timeout
-    const int MAX_WAIT_TIME_MS = 5000;  // 5 seconds maximum
+    const int MAX_WAIT_TIME_MS = 10000;  // 10 seconds maximum
     int waited_ms = 0;
     const int CHECK_INTERVAL_MS = 500;   // Check every 500 ms
 
     while (!data_received && waited_ms < MAX_WAIT_TIME_MS) {
-        vTaskDelay(CHECK_INTERVAL_MS / 10);  // devide by 10 because 1 tick = 10ms
+        vTaskDelay(CHECK_INTERVAL_MS / 10);
         waited_ms += CHECK_INTERVAL_MS;
     } 
+
+
+    /*------------For debuging---------------*/
+    // Print measurements in debug mode
+        char *measurements = storage_get_measurements();
+        if (measurements != NULL) {
+            ESP_LOGI(TAG, "Stored data: %s", measurements);
+            free(measurements);
+        }
+    /*---------------------------------------*/
+
+
+
 
     // Deinitialize BLE before going to sleep
     sensors_deinit();

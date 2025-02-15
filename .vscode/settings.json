@@ -9,6 +9,9 @@
         "freertos.h": "c",
         "task.h": "c",
         "storage.h": "c",
-        "nvs_flash.h": "c"
+        "nvs_flash.h": "c",
+        "esp_log.h": "c",
+        "json_helper.h": "c",
+        "esp_spiffs.h": "c"
     }
 }
