@@ -12,6 +12,7 @@
         "nvs_flash.h": "c",
         "esp_log.h": "c",
         "json_helper.h": "c",
-        "esp_spiffs.h": "c"
+        "esp_spiffs.h": "c",
+        "gsm_module.h": "c"
     }
 }

@@ -27,4 +27,16 @@ char* storage_get_measurements(void);
 // Clear the measurements from SPIFFS
 esp_err_t storage_clear_measurements(void);
 
+/**
+ * @brief Check if this is the first boot of the device
+ * @return true if first boot, false otherwise
+ */
+bool storage_is_first_boot(void);
+
+/**
+ * @brief Mark first boot as completed
+ * @return ESP_OK on success
+ */
+esp_err_t storage_set_first_boot_completed(void);
+
 #endif // STORAGE_H

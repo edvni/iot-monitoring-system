@@ -2,12 +2,15 @@
 #include <string.h>
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
+#include "time_manager.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
+#include <time.h>
+#include <sys/time.h>
 
 static const char *TAG = "SENSORS";
 static const char *TARGET_MAC = "DB:C3:58:D9:03:70";
@@ -70,7 +73,10 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
                         parse_ruuvi_data(fields.mfg_data + 2, fields.mfg_data_len - 2, &measurement);
                         
                         // Set timestamp
-                        measurement.timestamp = esp_timer_get_time() / 1000000;
+                        if (time_manager_get_formatted_time(measurement.timestamp, sizeof(measurement.timestamp)) != ESP_OK) {
+                            ESP_LOGE(TAG, "Failed to get formatted time");
+                            strcpy(measurement.timestamp, "Unknown");  // Запасной вариант если получение времени не удалось
+                        }
                         
                         // Call user callback
                         measurement_callback(&measurement);

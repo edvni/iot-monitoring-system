@@ -1,4 +1,5 @@
 // json_helper.c
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "json_helper.h"
 #include "esp_log.h"
 #include "cJSON.h"
@@ -16,7 +17,7 @@ cJSON* json_helper_create_measurement_object(ruuvi_measurement_t *measurement) {
     cJSON_AddStringToObject(measurement_obj, "mac", measurement->mac_address);
     cJSON_AddNumberToObject(measurement_obj, "temperature", measurement->temperature);
     cJSON_AddNumberToObject(measurement_obj, "humidity", measurement->humidity);
-    cJSON_AddNumberToObject(measurement_obj, "timestamp", measurement->timestamp);
+    cJSON_AddStringToObject(measurement_obj, "timestamp", measurement->timestamp);
 
     return measurement_obj;
 }

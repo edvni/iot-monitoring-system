@@ -19,45 +19,60 @@ static const char *TAG = "STORAGE";
 static nvs_handle_t my_nvs_handle;
 
 esp_err_t storage_init(void) {
-   // Initialize NVS
-   esp_err_t ret = nvs_flash_init();
-   if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-       ESP_ERROR_CHECK(nvs_flash_erase());
-       ret = nvs_flash_init();
-   }
-   ESP_ERROR_CHECK(ret);
-
-   ret = nvs_open("storage", NVS_READWRITE, &my_nvs_handle);
-   if (ret != ESP_OK) {
-       ESP_LOGE(TAG, "Error opening NVS handle!");
-       return ret;
-   }
-
-   // Initialize SPIFFS
-   const esp_vfs_spiffs_conf_t conf = {
-       .base_path = "/spiffs",
-       .partition_label = "storage",
-       .max_files = 5,
-       .format_if_mount_failed = true
-   };
-   
-   ret = esp_vfs_spiffs_register(&conf);
-   if (ret != ESP_OK) {
-       ESP_LOGE(TAG, "Failed to mount SPIFFS (%s)", esp_err_to_name(ret));
-       return ret;
-   }
-
-   // Check SPIFFS status
-   size_t total = 0, used = 0;
-   ret = esp_spiffs_info(conf.partition_label, &total, &used);
-   if (ret == ESP_OK) {
-       ESP_LOGI(TAG, "SPIFFS: total: %d, used: %d", total, used);
-   }
-
-   return ESP_OK;
-}
-
-// NVS operations for boot count
+    // Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // Use ret to store the result of erasing the NVS
+        ret = nvs_flash_erase();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Error erasing NVS flash!");
+            return ret;
+        }
+        ret = nvs_flash_init();
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error initializing NVS!");
+        return ret;
+    }
+ 
+    ret = nvs_open("storage", NVS_READWRITE, &my_nvs_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error opening NVS handle!");
+        return ret;
+    }
+ 
+    // Initialize SPIFFS
+    const esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/spiffs",
+        .partition_label = "storage",
+        .max_files = 5,
+        .format_if_mount_failed = true
+    };
+    
+    ret = esp_vfs_spiffs_register(&conf);
+    if (ret != ESP_OK) {
+        // Close NVS handle before returning error
+        nvs_close(my_nvs_handle);
+        ESP_LOGE(TAG, "Failed to mount SPIFFS (%s)", esp_err_to_name(ret));
+        return ret;
+    }
+ 
+    // Check SPIFFS status
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info(conf.partition_label, &total, &used);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "SPIFFS: total: %d, used: %d", total, used);
+    } else {
+        // Close NVS handle before returning error
+        nvs_close(my_nvs_handle);
+        return ret;
+    }
+ 
+    return ESP_OK;
+ }
+/*----------------------------------------------------------------------------------------------*/
+/*----------------------------NVS operations for boot count-------------------------------------*/
+/*----------------------------------------------------------------------------------------------*/
 uint32_t storage_get_boot_count(void) {
    uint32_t boot_count = 0;
    if (nvs_get_u32(my_nvs_handle, "boot_count", &boot_count) == ESP_ERR_NVS_NOT_FOUND) {
@@ -84,6 +99,10 @@ esp_err_t storage_check_and_reset_counter(uint32_t sleep_time) {
    return ESP_OK;
 }
 
+/*----------------------------------------------------------------------------------------------*/
+/*----------------------------SPIFFS operations for measurements--------------------------------*/ 
+/*----------------------------------------------------------------------------------------------*/
+
 // Check SPIFFS status
 static bool check_spiffs_status(void) {
    if (!esp_spiffs_mounted("storage")) {
@@ -99,90 +118,84 @@ static bool check_spiffs_status(void) {
    
    return true;
 }
-
 esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
-   if (!check_spiffs_status()) {
-       return ESP_ERR_INVALID_STATE;
-   }
+    if (!check_spiffs_status()) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
-   ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
-   struct stat st;
-   if (stat(MEASUREMENTS_FILE, &st) == 0) {
-       ESP_LOGI(TAG, "File exists, size: %ld bytes", st.st_size);
-   } else {
-       ESP_LOGI(TAG, "File does not exist, creating new");
-   }
+    // Read existing measurements
+    cJSON *measurements_array = NULL;
+    FILE* f = fopen(MEASUREMENTS_FILE, "r");
+    
+    if (f != NULL) {
+        // Определяем размер файла
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);
 
-   // Read existing measurements
-   cJSON *measurements_array = NULL;
-   FILE* f = fopen(MEASUREMENTS_FILE, "r");
-   
-   if (f != NULL) {
-       fseek(f, 0, SEEK_END);
-       long fsize = ftell(f);
-       fseek(f, 0, SEEK_SET);
+        if (fsize > 0) {  // Проверяем, что файл не пустой
+            char *json_str = malloc(fsize + 1);
+            if (json_str != NULL) {
+                size_t read_size = fread(json_str, 1, fsize, f);
+                if (read_size == (size_t)fsize) {
+                    json_str[fsize] = '\0';
+                    measurements_array = cJSON_Parse(json_str);
+                }
+                free(json_str);
+            }
+        }
+        fclose(f);
+    }
 
-       char *json_str = malloc(fsize + 1);
-       if (json_str != NULL) {
-           if (fread(json_str, 1, fsize, f) == (size_t)fsize) {
-               json_str[fsize] = '\0';
-               measurements_array = cJSON_Parse(json_str);
-           }
-           free(json_str);
-       }
-       fclose(f);
-   }
+    // Если массив не существует или не удалось прочитать, создаем новый
+    if (measurements_array == NULL) {
+        measurements_array = cJSON_CreateArray();
+        if (measurements_array == NULL) {
+            ESP_LOGE(TAG, "Failed to create measurements array");
+            return ESP_ERR_NO_MEM;
+        }
+    }
 
-   if (measurements_array == NULL) {
-       measurements_array = cJSON_CreateArray();
-       if (measurements_array == NULL) {
-           return ESP_ERR_NO_MEM;
-       }
-   }
+    // Add new measurement
+    cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
+    if (measurement_obj == NULL) {
+        ESP_LOGE(TAG, "Failed to create measurement object");
+        cJSON_Delete(measurements_array);
+        return ESP_FAIL;
+    }
 
-   ESP_LOGI(TAG, "Array size before adding: %d", cJSON_GetArraySize(measurements_array));
+    if (!cJSON_AddItemToArray(measurements_array, measurement_obj)) {
+        ESP_LOGE(TAG, "Failed to add measurement to array");
+        cJSON_Delete(measurement_obj);
+        cJSON_Delete(measurements_array);
+        return ESP_FAIL;
+    }
 
-   // Add new measurement
-   cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
-   if (measurement_obj == NULL || !cJSON_AddItemToArray(measurements_array, measurement_obj)) {
-       cJSON_Delete(measurements_array);
-       return ESP_FAIL;
-   }
+    // Save updated array
+    char *new_json_str = cJSON_PrintUnformatted(measurements_array);  // Используем неформатированный вывод
+    cJSON_Delete(measurements_array);
 
-   ESP_LOGI(TAG, "Array size after adding: %d", cJSON_GetArraySize(measurements_array));
+    if (new_json_str == NULL) {
+        ESP_LOGE(TAG, "Failed to print JSON string");
+        return ESP_ERR_NO_MEM;
+    }
 
-   // Save updated array
-   char *new_json_str = cJSON_Print(measurements_array);
-   cJSON_Delete(measurements_array);
+    // Записываем в файл
+    f = fopen(MEASUREMENTS_FILE, "w");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        free(new_json_str);
+        return ESP_FAIL;
+    }
 
-   if (new_json_str == NULL) {
-       return ESP_ERR_NO_MEM;
-   }
+    fprintf(f, "%s", new_json_str);
+    fclose(f);
+    free(new_json_str);
 
-   f = fopen(MEASUREMENTS_FILE, "w");
-   if (f == NULL) {
-       free(new_json_str);
-       return ESP_FAIL;
-   }
-
-   fprintf(f, "%s", new_json_str);
-   fclose(f);
-   // ESP_LOGI(TAG, "Saved data: %s", new_json_str);
-   free(new_json_str);
-
-   // Verify file
-   f = fopen(MEASUREMENTS_FILE, "r");
-   if (f != NULL) {
-       fseek(f, 0, SEEK_END);
-       long size = ftell(f);
-       fclose(f);
-       ESP_LOGI(TAG, "File verification: size = %ld bytes", size);
-   } else {
-       ESP_LOGE(TAG, "File verification failed!");
-   }
-
-   return ESP_OK;
+    return ESP_OK;
 }
+
+// Get measurements from SPIFFS
 
 char* storage_get_measurements(void) {
    if (!check_spiffs_status()) {
@@ -216,6 +229,46 @@ char* storage_get_measurements(void) {
    return json_str;
 }
 
+// Clear measurements from SPIFFS
 esp_err_t storage_clear_measurements(void) {
    return check_spiffs_status() ? unlink(MEASUREMENTS_FILE) : ESP_ERR_INVALID_STATE;
+}
+
+
+
+
+
+/*----------------------------------------------------------------------------------------------*/
+/*----------------------------First boot flag operations for GSM--------------------------------*/
+/*----------------------------------------------------------------------------------------------*/
+
+bool storage_is_first_boot(void) {
+    uint8_t first_boot = 1;  // By default, we assume this is the first boot
+    esp_err_t err = nvs_get_u8(my_nvs_handle, "first_boot", &first_boot);
+    
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "First boot flag not found, assuming first boot");
+        return true;
+    } else if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error reading first boot flag");
+        return true;
+    }
+    
+    return first_boot == 1;
+}
+
+esp_err_t storage_set_first_boot_completed(void) {
+    esp_err_t err = nvs_set_u8(my_nvs_handle, "first_boot", 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error setting first boot flag");
+        return err;
+    }
+    
+    err = nvs_commit(my_nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error committing first boot flag");
+        return err;
+    }
+    
+    return ESP_OK;
 }
