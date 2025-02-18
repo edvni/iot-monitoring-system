@@ -100,16 +100,16 @@ void app_main(void)
    sensors_deinit();
 
    // Deinitialize GSM module before sleep
-   gsm_module_deinit();
+   // gsm_module_deinit();
 
    if (!data_received) {
        ESP_LOGW(TAG, "No data received within timeout period");
    }
 
-   // Set timer to wake up
-   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-   ESP_LOGI(TAG, "Going to sleep for %d seconds", TIME_TO_SLEEP);
+//    // Set timer to wake up
+//    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+//    ESP_LOGI(TAG, "Going to sleep for %d seconds", TIME_TO_SLEEP);
 
-   // Deep sleep
-   esp_deep_sleep_start();
+//    // Deep sleep
+//    esp_deep_sleep_start();
 }

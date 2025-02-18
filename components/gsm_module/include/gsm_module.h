@@ -11,7 +11,8 @@
 #define GSM_PWRKEY_PIN         (4)
 #define GSM_RESET_PIN          (5)
 #define GSM_POWER_PIN          (12)
-#define BUF_SIZE               (1024)
+#define BUF_SIZE               (2048)
+#define GSM_PIN                "1234"
 
 
 esp_err_t gsm_module_init(void);
