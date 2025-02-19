@@ -3,18 +3,20 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char *TAG = "GSM_MODULE";
+static QueueHandle_t gsm_uart_queue;
+static TaskHandle_t gsm_event_task_handle = NULL;
 static TaskHandle_t gsm_task_handle = NULL;
 
-/*--------------------------------------------------------------------------------*/
-/*---------------------------Service functions------------------------------------*/
-/*--------------------------------------------------------------------------------*/
+static bool wait_for_response = false;
+static char current_response[BUF_SIZE];
 
-// Clear input and output buffer and small delay
+// // Clear input and output buffer and small delay
 static void gsm_uart_flush_and_delay(void)
 {
     uart_flush_input(GSM_UART_PORT_NUM);
@@ -22,83 +24,34 @@ static void gsm_uart_flush_and_delay(void)
     vTaskDelay(100 / portTICK_PERIOD_MS);
 }
 
-// Template for sending AT commands
-esp_err_t gsm_send_at_cmd(const char *cmd, char *response, size_t response_size, uint32_t timeout_ms)
-{
-    if (!cmd) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    // Clear input and output buffer and small delay
-    gsm_uart_flush_and_delay();
-
-    // Sending command
-    uart_write_bytes(GSM_UART_PORT_NUM, cmd, strlen(cmd));
-    ESP_LOGI(TAG, "Sent: %s", cmd);
-
-    if (!response || response_size == 0) {
-        return ESP_OK;
-    }
-
-    uint8_t *data = (uint8_t *)malloc(BUF_SIZE);
-    if (!data) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    memset(data, 0, BUF_SIZE);
-
-    int total_read = 0;
-    int attempts = timeout_ms / 100;// Read every 100 ms
-
-    while (attempts--) {
-        int len = uart_read_bytes(GSM_UART_PORT_NUM, data + total_read, BUF_SIZE - total_read - 1, 100 / portTICK_PERIOD_MS);
-        if (len > 0) {
-            total_read += len;
-            data[total_read] = '\0';
-            // If found "OK" or "ERROR" response, stop reading
-            if (strstr((char *)data, "OK") || strstr((char *)data, "ERROR")) {
-                break;
-            }
-        }
-    }
-    
-    // If response is not empty, copy it to the output buffer and free memory
-    if (total_read > 0) {
-        ESP_LOGI(TAG, "Received: %s", data);
-        if (strstr((char *)data, "OK")) {
-            strncpy(response, (char *)data, response_size - 1);
-            response[response_size - 1] = '\0';
-            free(data);
-            return ESP_OK;
-        }
-    }
-    free(data);
-    return ESP_FAIL;
-}
-
-// Start setting for using GSM module
 esp_err_t gsm_set_pin(const char* pin)
 {
-    if (!pin) {
-        ESP_LOGE(TAG, "PIN code is NULL");
-        return ESP_ERR_INVALID_ARG;
-    }
-
+    
     char response[BUF_SIZE];
     char cmd[32];
 
     // Clear input and output buffer and small delay
     gsm_uart_flush_and_delay();
 
+    // Test AT command to verify communication
+    if (gsm_send_at_cmd("AT\r\n", response, sizeof(response), 1000) != ESP_OK) {
+        ESP_LOGE(TAG, "No response from modem");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Modem responded to AT command");
+
+    // Clear input and output buffer and small delay
+    gsm_uart_flush_and_delay();
+
     // 1. Turning off echo
-    if (gsm_send_at_cmd("ATE0\r\n", response, sizeof(response), 1000) == ESP_OK) {
+    if (gsm_send_at_cmd("ATE0\r\n", response, sizeof(response), 500) == ESP_OK) {
         ESP_LOGI(TAG, "Echo disabled: %s", response);
     } else {
         ESP_LOGW(TAG, "Failed to disable echo, proceeding anyway...");
     }
 
     // 2. Checking SIM status
-    if (gsm_send_at_cmd("AT+CPIN?\r\n", response, sizeof(response), 1000) == ESP_OK) {
+    if (gsm_send_at_cmd("AT+CPIN?\r\n", response, sizeof(response), 500) == ESP_OK) {
         if (strstr(response, "READY")) {
             ESP_LOGI(TAG, "SIM already unlocked");
             return ESP_OK;
@@ -115,57 +68,113 @@ esp_err_t gsm_set_pin(const char* pin)
 
     // 3. Sending command to unlock SIM if needed
     snprintf(cmd, sizeof(cmd), "AT+CPIN=\"%s\"\r\n", pin);
-
-    // Clear input and output buffer and small delay
-    gsm_uart_flush_and_delay();
-    if (gsm_send_at_cmd(cmd, response, sizeof(response), 5000) == ESP_OK && strstr(response, "READY")) {
-        ESP_LOGI(TAG, "PIN accepted, SIM unlocked: %s", response);
-        return ESP_OK;
-    } else {
-        ESP_LOGE(TAG, "Failed to unlock SIM: %s", response);
-        return ESP_FAIL;
+    if (gsm_send_at_cmd(cmd, response, sizeof(response), 3000) == ESP_OK) {
+        if (strstr(response, "OK")) {
+            ESP_LOGI(TAG, "PIN accepted, SIM unlocked");
+            return ESP_OK;
+        }
     }
+
+    ESP_LOGE(TAG, "Failed to unlock SIM");
+    return ESP_FAIL;
 }
 
-static esp_err_t gsm_check_network_registration(void)
+esp_err_t gsm_registration(void)
 {
     char response[BUF_SIZE];
-    int retries = 5; // Количество попыток проверки регистрации
+    const int MAX_RETRIES = 10;
+    const int RETRY_DELAY_MS = 3000;
 
-    while (retries--) {
-        gsm_uart_flush_and_delay();
-        // Отправляем команду для проверки регистрации сети
-        esp_err_t ret = gsm_send_at_cmd("AT+CREG?\r\n", response, sizeof(response), 1000);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Network registration response: %s", response);
-            if (strstr(response, "0,1")) {
-                ESP_LOGI(TAG, "Network successfully registered.");
+    // Check registration status with retries
+    for (int retry = 0; retry < MAX_RETRIES; retry++) {
+        if (gsm_send_at_cmd("AT+CREG?\r\n", response, sizeof(response), 3000) == ESP_OK) {
+            if (strstr(response, "+CREG:") && 
+               (strstr(response, "0,1") || strstr(response, "0,5"))) {
+                ESP_LOGI(TAG, "Registration is done: %s", response);
                 return ESP_OK;
             }
-        } else {
-            ESP_LOGE(TAG, "Failed to get network registration status.");
         }
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+
+        ESP_LOGW(TAG, "Registration attempt %d failed, retrying in %d ms...", 
+                 retry + 1, RETRY_DELAY_MS);
+        vTaskDelay(RETRY_DELAY_MS / portTICK_PERIOD_MS);
     }
 
-    ESP_LOGE(TAG, "Network registration failed after retries.");
+    ESP_LOGE(TAG, "Failed to register after %d attempts", MAX_RETRIES);
     return ESP_FAIL;
 }
 
 
+// Таск для обработки UART событий
+static void gsm_uart_event_task(void *pvParameters)
+{
+    uart_event_t event;
+    uint8_t* dtmp = (uint8_t*) malloc(BUF_SIZE);
+    
+    for(;;) {
+        if(xQueueReceive(gsm_uart_queue, (void *)&event, (TickType_t)portMAX_DELAY)) {
 
-/*--------------------------------------------------------------------------------*/
-/*----------------------Initialisation / deInitialisation ------------------------*/
-/*--------------------------------------------------------------------------------*/
+            memset(dtmp, 0, BUF_SIZE);
 
-// Construct a task for GSM module
+            switch(event.type) {
+
+                case UART_DATA:
+
+                ESP_LOGI(TAG, "[UART DATA]: %d", event.size);
+
+                if (uart_read_bytes(GSM_UART_PORT_NUM, dtmp, event.size, portMAX_DELAY) > 0) {
+                    ESP_LOGI(TAG, "Read data: %s", dtmp);
+                    
+                    if (wait_for_response) {
+                        strncat(current_response, (char*)dtmp, BUF_SIZE - strlen(current_response) - 1);
+
+                        if (strstr(current_response, "OK") || strstr(current_response, "ERROR")) {
+                            wait_for_response = false;
+                        }
+                    }
+                }
+                break;
+                    
+                case UART_FIFO_OVF:
+                    ESP_LOGE(TAG, "HW FIFO Overflow");
+                    // uart_flush_input(GSM_UART_PORT_NUM);
+                    gsm_uart_flush_and_delay();
+                    xQueueReset(gsm_uart_queue);
+                    break;
+                    
+                case UART_BUFFER_FULL:
+                    ESP_LOGE(TAG, "Ring Buffer Full");
+                    //uart_flush_input(GSM_UART_PORT_NUM);
+                    gsm_uart_flush_and_delay();
+                    xQueueReset(gsm_uart_queue);
+                    break;
+                    
+                case UART_PATTERN_DET:
+                    size_t buffered_size;
+                    uart_get_buffered_data_len(GSM_UART_PORT_NUM, &buffered_size);
+                    int pos = uart_pattern_pop_pos(GSM_UART_PORT_NUM);
+                    ESP_LOGI(TAG, "Pattern detected at position %d", pos);
+                    break;
+                    
+                default:
+                    ESP_LOGI(TAG, "Other event type: %d", event.type);
+                    break;
+            }
+        }
+    }
+    free(dtmp);
+    vTaskDelete(NULL);
+}
+
+// Основной таск GSM операций
 static void gsm_uart_task(void *arg)
 {
     if (gsm_set_pin("1234") == ESP_OK) {
-        ESP_LOGI(TAG, "SIM unlocked successfully.");
-        
-        // Проверяем регистрацию сети
-        if (gsm_check_network_registration() == ESP_OK) {
+        ESP_LOGI(TAG, "SIM works successfully.");
+
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
+
+        if (gsm_registration() == ESP_OK) {
             ESP_LOGI(TAG, "GSM module is fully registered and ready.");
         } else {
             ESP_LOGE(TAG, "Network registration failed.");
@@ -175,7 +184,6 @@ static void gsm_uart_task(void *arg)
     }
 
     while (1) {
-        // Остальная логика работы модуля...
         vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
 }
@@ -199,29 +207,38 @@ esp_err_t gsm_module_init(void)
         .parity    = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
+        .source_clk = UART_SCLK_APB,
     };
 
-    ESP_ERROR_CHECK(uart_driver_install(GSM_UART_PORT_NUM, BUF_SIZE * 2, 0, 0, NULL, 0));
+    // Install UART driver and get event queue
+    ESP_ERROR_CHECK(uart_driver_install(GSM_UART_PORT_NUM, BUF_SIZE * 4, BUF_SIZE * 4, 50, &gsm_uart_queue, 0));
     ESP_ERROR_CHECK(uart_param_config(GSM_UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(GSM_UART_PORT_NUM, GSM_UART_TX_PIN, GSM_UART_RX_PIN, 
                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-    // Step 1: Enable power
-    gpio_set_level(GSM_POWER_PIN, 1);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);  // Increased delay for power stabilization
+    uart_set_rx_full_threshold(GSM_UART_PORT_NUM, 64);
+    uart_set_tx_empty_threshold(GSM_UART_PORT_NUM, 10);
+    uart_set_rx_timeout(GSM_UART_PORT_NUM, 2);
 
-    // Step 2: PWRKEY sequence
+    // Set pattern detection for "OK" and "ERROR" responses
+    uart_enable_pattern_det_baud_intr(GSM_UART_PORT_NUM, 'O', 2, 9, 0, 0);
+    uart_pattern_queue_reset(GSM_UART_PORT_NUM, 20);
+
+    // Power sequence
+    gpio_set_level(GSM_POWER_PIN, 1);
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+
     gpio_set_level(GSM_PWRKEY_PIN, 0);
     vTaskDelay(100 / portTICK_PERIOD_MS);
     gpio_set_level(GSM_PWRKEY_PIN, 1);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);  // Increased delay as per examples
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
     gpio_set_level(GSM_PWRKEY_PIN, 0);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);  // Wait for module to initialize
-
     vTaskDelay(2000 / portTICK_PERIOD_MS);
-    
 
+    // Create UART event handling task first
+    xTaskCreate(gsm_uart_event_task, "uart_event_task", 3072, NULL, 12, &gsm_event_task_handle);
+    
+    // Then create main GSM task
     xTaskCreate(gsm_uart_task, "gsm_uart_task", 8192, NULL, 10, &gsm_task_handle);
 
     return ESP_OK;
@@ -229,6 +246,9 @@ esp_err_t gsm_module_init(void)
 
 esp_err_t gsm_module_deinit(void)
 {
+    if (gsm_event_task_handle) {
+        vTaskDelete(gsm_event_task_handle);
+    }
     if (gsm_task_handle) {
         vTaskDelete(gsm_task_handle);
     }
@@ -236,4 +256,39 @@ esp_err_t gsm_module_deinit(void)
 }
 
 
+// Модифицированная функция отправки AT команд
+esp_err_t gsm_send_at_cmd(const char* cmd, char* response, size_t response_size, uint32_t timeout_ms)
+{
+    if (!cmd) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
+    memset(current_response, 0, BUF_SIZE);
+    // uart_flush(GSM_UART_PORT_NUM);
+    gsm_uart_flush_and_delay();
+
+    wait_for_response = true;
+
+    int written = uart_write_bytes(GSM_UART_PORT_NUM, cmd, strlen(cmd));
+    ESP_LOGI(TAG, "Sent: %s (bytes written: %d)", cmd, written);
+
+    uart_wait_tx_done(GSM_UART_PORT_NUM, pdMS_TO_TICKS(100));
+
+    // Wait for response using event task
+    TickType_t start_time = xTaskGetTickCount();
+    while (wait_for_response) {
+        if ((xTaskGetTickCount() - start_time) >= pdMS_TO_TICKS(timeout_ms)) {
+            wait_for_response = false;
+            ESP_LOGW(TAG, "Command timeout");
+            return ESP_FAIL;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    if (response && response_size > 0) {
+        strncpy(response, current_response, response_size - 1);
+        response[response_size - 1] = '\0';
+    }
+
+    return (strstr(current_response, "OK") != NULL) ? ESP_OK : ESP_FAIL;
+}
