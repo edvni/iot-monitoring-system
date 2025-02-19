@@ -12,6 +12,7 @@ static const char *TAG = "GSM_MODULE";
 static QueueHandle_t gsm_uart_queue;
 static TaskHandle_t gsm_event_task_handle = NULL;
 static TaskHandle_t gsm_task_handle = NULL;
+static char *last_command = NULL;
 
 static bool wait_for_response = false;
 static char current_response[BUF_SIZE];
@@ -34,7 +35,7 @@ esp_err_t gsm_set_pin(const char* pin)
     gsm_uart_flush_and_delay();
 
     // Test AT command to verify communication
-    if (gsm_send_at_cmd("AT\r\n", response, sizeof(response), 1000) != ESP_OK) {
+    if (gsm_send_at_cmd("AT+CREG=0\r\n", response, sizeof(response), 1000) != ESP_OK) {
         ESP_LOGE(TAG, "No response from modem");
         return ESP_FAIL;
     }
@@ -87,7 +88,8 @@ esp_err_t gsm_registration(void)
 
     // Check registration status with retries
     for (int retry = 0; retry < MAX_RETRIES; retry++) {
-        if (gsm_send_at_cmd("AT+CREG?\r\n", response, sizeof(response), 3000) == ESP_OK) {
+        gsm_uart_flush_and_delay();
+        if (gsm_send_at_cmd("AT+CREG?\r\n", response, sizeof(response), 9000) == ESP_OK) {
             if (strstr(response, "+CREG:") && 
                (strstr(response, "0,1") || strstr(response, "0,5"))) {
                 ESP_LOGI(TAG, "Registration is done: %s", response);
@@ -119,18 +121,24 @@ static void gsm_uart_event_task(void *pvParameters)
             switch(event.type) {
 
                 case UART_DATA:
-
                 ESP_LOGI(TAG, "[UART DATA]: %d", event.size);
-
                 if (uart_read_bytes(GSM_UART_PORT_NUM, dtmp, event.size, portMAX_DELAY) > 0) {
-                    ESP_LOGI(TAG, "Read data: %s", dtmp);
+                    ESP_LOGI(TAG, "Read data (ASCII): %s", dtmp);
+                    ESP_LOG_BUFFER_HEX(TAG, dtmp, event.size);
                     
-                    if (wait_for_response) {
-                        strncat(current_response, (char*)dtmp, BUF_SIZE - strlen(current_response) - 1);
-
-                        if (strstr(current_response, "OK") || strstr(current_response, "ERROR")) {
-                            wait_for_response = false;
+                    if (wait_for_response && last_command) {
+                        // Проверяем, относится ли ответ к последней команде
+                        if (strstr((char*)dtmp, last_command) || 
+                            (strstr((char*)dtmp, "OK") || strstr((char*)dtmp, "ERROR"))) {
+                            strncat(current_response, (char*)dtmp, BUF_SIZE - strlen(current_response) - 1);
+                            
+                            if (strstr(current_response, "OK") || strstr(current_response, "ERROR")) {
+                                wait_for_response = false;
+                                free(last_command);
+                                last_command = NULL;
+                            }
                         }
+                        // Иначе это асинхронное сообщение - игнорируем
                     }
                 }
                 break;
@@ -171,6 +179,12 @@ static void gsm_uart_task(void *arg)
 {
     if (gsm_set_pin("1234") == ESP_OK) {
         ESP_LOGI(TAG, "SIM works successfully.");
+
+        // Отключаем PPP
+        char response[BUF_SIZE];
+        if (gsm_send_at_cmd("AT+CGATT=0\r\n", response, sizeof(response), 3000) == ESP_OK) {
+            ESP_LOGI(TAG, "PPP detached");
+        }
 
         vTaskDelay(10000 / portTICK_PERIOD_MS);
 
@@ -273,6 +287,8 @@ esp_err_t gsm_send_at_cmd(const char* cmd, char* response, size_t response_size,
     ESP_LOGI(TAG, "Sent: %s (bytes written: %d)", cmd, written);
 
     uart_wait_tx_done(GSM_UART_PORT_NUM, pdMS_TO_TICKS(100));
+
+    last_command = strdup(cmd);
 
     // Wait for response using event task
     TickType_t start_time = xTaskGetTickCount();
