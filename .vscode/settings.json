@@ -1,5 +1,5 @@
 {
-    "idf.espIdfPathWin": "c:\\Users\\vdis0\\esp\\esp-idf-v5.4",
+    "idf.espIdfPathWin": "C:\\Users\\vdis0\\esp\\v5.4\\esp-idf",
     "idf.toolsPathWin": "c:\\Users\\vdis0\\.espressif",
     "files.associations": {
         "*.sqlbook": "sql",
@@ -13,6 +13,12 @@
         "esp_log.h": "c",
         "json_helper.h": "c",
         "esp_spiffs.h": "c",
-        "gsm_module.h": "c"
-    }
+        "gsm_module.h": "c",
+        "event_groups.h": "c",
+        "esp_netif.h": "c",
+        "esp_event.h": "c",
+        "esp_modem_api.h": "c",
+        "esp_netif_ppp.h": "c"
+    },
+    "idf.pythonInstallPath": "c:\\Users\\vdis0\\.espressif\\tools\\idf-python\\3.11.2\\python.exe"
 }

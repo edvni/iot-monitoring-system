@@ -43,6 +43,8 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
 
 void app_main(void)
 {   
+    esp_log_level_set(TAG, ESP_LOG_INFO);
+    
     // Power management initialization
     ESP_ERROR_CHECK(power_management_init());
 
