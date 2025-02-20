@@ -4,13 +4,13 @@
             "name": "ESP-IDF",
             "includePath": [
                 "${workspaceFolder}/**",
-                "C:/Users/vdis0/esp/esp-idf-v5.4/components/**",
-                "C:/Users/vdis0/esp/esp-idf-v5.4/components/bt/host/nimble/nimble/porting/nimble/include",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/**",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/porting/nimble/include",
                 "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/14.2.0/include",
                 "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/xtensa-esp-elf/include",
                 "${workspaceFolder}/components/sensors/include",
                 "${workspaceFolder}/components/storage/include",
-                "${workspaceFolder}/components/power_managment/include"
+                "${workspaceFolder}/components/power_management/include"
             ],
             "defines": [
                 "ESP_PLATFORM",
