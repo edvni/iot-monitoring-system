@@ -9,6 +9,7 @@
                 "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/14.2.0/include",
                 "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/xtensa-esp-elf/include",
                 "C:/Users/vdis0/esp/v5.4/esp-idf/components/esp-protocols/components/esp_modem/include",
+                "C:/Users/vdis0/esp/v5.4/esp-idf/components/esp-protocols/components/esp_modem/include/cxx_include",
                 "${workspaceFolder}/components/sensors/include",
                 "${workspaceFolder}/components/storage/include",
                 "${workspaceFolder}/components/power_management/include",

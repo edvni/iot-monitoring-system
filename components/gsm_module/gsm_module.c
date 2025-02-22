@@ -20,9 +20,6 @@ static esp_modem_dce_t *dce = NULL;
 
 esp_err_t gsm_module_init(void) {
     esp_log_level_set(TAG, ESP_LOG_INFO);
-
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
     
 
     esp_netif_config_t netif_config = ESP_NETIF_DEFAULT_PPP();

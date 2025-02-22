@@ -18,7 +18,9 @@
         "esp_netif.h": "c",
         "esp_event.h": "c",
         "esp_modem_api.h": "c",
-        "esp_netif_ppp.h": "c"
+        "esp_netif_ppp.h": "c",
+        "esp_modem_api.hpp": "c",
+        "mqtt_client.h": "c"
     },
     "idf.pythonInstallPath": "c:\\Users\\vdis0\\.espressif\\tools\\idf-python\\3.11.2\\python.exe"
 }
