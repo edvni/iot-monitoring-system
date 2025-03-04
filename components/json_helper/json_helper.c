@@ -13,22 +13,34 @@ cJSON* json_helper_create_measurement_object(ruuvi_measurement_t *measurement) {
         return NULL;
     }
 
-    cJSON_AddStringToObject(measurement_obj, "mac", measurement->mac_address);
-    cJSON_AddNumberToObject(measurement_obj, "temperature", measurement->temperature);
-    cJSON_AddNumberToObject(measurement_obj, "humidity", measurement->humidity);
-    cJSON_AddNumberToObject(measurement_obj, "timestamp", measurement->timestamp);
+    // Buffers for rounded values
+    char temp_str[10];
+    char hum_str[10];
+
+    // Formatting numbers as strings with two decimal places
+    snprintf(temp_str, sizeof(temp_str), "%.f", measurement->temperature);
+    snprintf(hum_str, sizeof(hum_str), "%.f", measurement->humidity);
+
+    // Adding to JSON as strings
+    cJSON_AddStringToObject(measurement_obj, "t", temp_str);
+    cJSON_AddStringToObject(measurement_obj, "h", hum_str);
+
+    //cJSON_AddStringToObject(measurement_obj, "mac", measurement->mac_address);
+    //cJSON_AddNumberToObject(measurement_obj, "temperature", measurement->temperature);
+    //cJSON_AddNumberToObject(measurement_obj, "humidity", measurement->humidity);
+    //cJSON_AddNumberToObject(measurement_obj, "timestamp", measurement->timestamp);
 
     return measurement_obj;
 }
 
-// Transform one measurement to JSON string
+// Transforming one measurement to JSON string
 char* json_helper_measurement_to_string(ruuvi_measurement_t *measurement) {
     cJSON *obj = json_helper_create_measurement_object(measurement);
     if (obj == NULL) {
         return NULL;
     }
 
-    char *string = cJSON_Print(obj);
+    char *string = cJSON_PrintUnformatted(obj);
     cJSON_Delete(obj);
 
     return string;

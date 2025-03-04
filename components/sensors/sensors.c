@@ -148,31 +148,25 @@ esp_err_t sensors_start_scan(uint32_t duration_sec) {
     return ESP_OK;
  }
  
- esp_err_t sensors_stop_scan(void) {
+esp_err_t sensors_stop_scan(void) {
     int rc = ble_gap_disc_cancel();
     if (rc != 0) {
         ESP_LOGE(TAG, "Error canceling GAP discovery procedure; rc=%d", rc);
         return ESP_FAIL;
     }
     return ESP_OK;
- }
+}
 
- esp_err_t sensors_deinit(void) {
-    int rc;
- 
-    // Stop scanning if active
-    sensors_stop_scan();
- 
-    // Stop the NimBLE host task
-    rc = nimble_port_stop();
-    if (rc != 0) {
-        ESP_LOGE(TAG, "Failed to stop nimble port; rc=%d", rc);
-        return ESP_FAIL;
-    }
- 
-    // Deinitialize NimBLE
-    nimble_port_deinit();
+esp_err_t sensors_deinit(void) {
+    // Only stop scanning //
+    int rc = ble_gap_disc_cancel();
+    ESP_LOGW(TAG, "Canceling GAP discovery procedure; rc=%d", rc);
     
+    // Clearing callback
     measurement_callback = NULL;
+    
+    // Do not call nimble_port_stop() and nimble_port_deinit()
+    // This will prevent Guru Meditation Error, but may lead to resource leaks
+    
     return ESP_OK;
- }
+}
