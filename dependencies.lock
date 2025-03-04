@@ -1,19 +1,106 @@
 dependencies:
-  espressif/esp_modem:
+  espressif/ch390:
+    component_hash: cdc5a7499a4175dc493a714d9c5ecb534d258d3df8ec1ca9a56f9c0201be2149
     dependencies:
     - name: idf
-      version: '>=4.1'
+      require: private
+      version: '>=5.1'
     source:
-      path: C:\Users\vdis0\esp\v5.4\esp-idf\components\esp-protocols\components\esp_modem
+      registry_url: https://components.espressif.com
+      type: service
+    version: 0.2.2
+  espressif/console_simple_init:
+    dependencies:
+    - name: idf
+      version: '>=5.0'
+    source:
+      path: C:\Users\vdis0\esp\v5.4\esp-idf\components\esp-protocols\components\console_simple_init
       type: local
-    version: 1.3.0
+    version: 1.1.0
+  espressif/enc28j60:
+    component_hash: ac9af63b0e9bc7dd9a8b252d0c58db448f2b57b01291aecd353dc1c4b8fe0a62
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.0.0
+  espressif/esp-idf-cxx:
+    component_hash: 2fa63e4e725f0c2d3dd6d99da8a91d404b4b49667088b1be0f336eb9c13ff17f
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.2-beta
+  espressif/esp_serial_slave_link:
+    component_hash: 8c534b7d4986ca0e4c41db71f559492b795ab862f1d15359d7993034696b7bcc
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.0
+  espressif/ethernet_init:
+    component_hash: 40a26bc0e24b6d2d663b8682e6b2398f19473b4e1c19949a29fcac5ec4b348d6
+    dependencies:
+    - name: espressif/ch390
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: espressif/enc28j60
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: espressif/lan867x
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: target in [esp32, esp32p4]
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=5.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.4.0
+  espressif/lan867x:
+    component_hash: d81891f672f7c42e60b28cb3374675a92e67ca5dbe0a184e72506a00b43f124f
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    targets:
+    - esp32
+    - esp32p4
+    version: 1.0.2
   idf:
     source:
       type: idf
     version: 5.4.0
+  sock_utils:
+    dependencies: []
+    source:
+      path: C:\Users\vdis0\esp\v5.4\esp-idf\components\esp-protocols\components\sock_utils
+      type: local
+    version: 0.2.2
 direct_dependencies:
-- espressif/esp_modem
+- espressif/console_simple_init
+- espressif/esp-idf-cxx
+- espressif/esp_serial_slave_link
+- espressif/ethernet_init
+- espressif/sock_utils
 - idf
-manifest_hash: ea32be21f0e1a3d81e3f6129b796ff2787dc8561b1f05a292958f29aebc20cdb
+manifest_hash: 8fa70a88d6f85a4fd92842e647790d602dc455d239358f1cd7410a9d84252b0d
 target: esp32
 version: 2.0.0

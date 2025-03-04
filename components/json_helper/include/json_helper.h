@@ -6,10 +6,22 @@
 #include "sensors.h"
 #include "cJSON.h"
 
-// Transform one measurement to JSON string
+
+/**
+ * @brief Transform one measurement to JSON string
+ * 
+ * @param measurement Measurement to transform
+ * @return char* JSON string
+ */
 char* json_helper_measurement_to_string(ruuvi_measurement_t *measurement);
 
-// Create a JSON object from a measurement
+
+/**
+ * @brief Create a JSON object from a measurement
+ * 
+ * @param measurement Measurement to transform
+ * @return cJSON* JSON object
+ */
 cJSON* json_helper_create_measurement_object(ruuvi_measurement_t *measurement);
 
 #endif // JSON_HELPER_H

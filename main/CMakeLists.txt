@@ -1,5 +1,13 @@
 idf_component_register(
     SRCS "main.c"
-    INCLUDE_DIRS "."
     REQUIRES 
+        console 
+        nvs_flash 
+        esp_netif 
+        gsm_modem 
+        driver
+        discord_api
+        power_management
+        sensors
+        storage
 )

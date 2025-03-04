@@ -3,17 +3,24 @@
         {
             "name": "ESP-IDF",
             "includePath": [
+                
                 "${workspaceFolder}/**",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/**",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/bt/host/nimble/nimble/porting/nimble/include",
-                "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/14.2.0/include",
-                "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/xtensa-esp-elf/include",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/esp-protocols/components/esp_modem/include",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/esp-protocols/components/esp_modem/include/cxx_include",
-                "${workspaceFolder}/components/sensors/include",
-                "${workspaceFolder}/components/storage/include",
-                "${workspaceFolder}/components/power_management/include",
-                "C:/Users/vdis0/esp/v5.4/esp-idf/components/esp_netif/lwip/netif"
+                "${workspaceFolder}/main",
+                "${workspaceFolder}/components/**",
+                
+               
+                "${env:IDF_PATH}/components/**",
+                "${env:IDF_PATH}/components/bt/host/nimble/nimble/porting/nimble/include",
+                "${env:IDF_PATH}/components/esp-protocols/components/esp_modem/include",
+                "${env:IDF_PATH}/components/esp-protocols/components/esp_modem/include/cxx_include",
+                "${env:IDF_PATH}/components/esp_http_client/include",
+                "${env:IDF_PATH}/components/esp_netif/lwip/netif",
+                "${env:IDF_PATH}/components/esp_netif/**",
+                
+                
+                "${env:IDF_TOOLS_PATH}/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/14.2.0/include",
+                "${env:IDF_TOOLS_PATH}/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/xtensa-esp-elf/include"
+
             ],
             "defines": [
                 "ESP_PLATFORM",
@@ -22,10 +29,13 @@
                 "_GNU_SOURCE",
                 "configTICK_RATE_HZ=1000"
             ],
-            "compilerPath": "C:/Users/vdis0/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc.exe",
+            "compilerPath": "${env:IDF_TOOLS_PATH}/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc.exe",
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "gcc-x64"
+            "intelliSenseMode": "gcc-x64",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ]
         }
     ],
     "version": 4

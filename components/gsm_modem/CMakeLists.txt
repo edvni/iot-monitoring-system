@@ -1,0 +1,16 @@
+idf_component_register(
+    SRCS 
+        "gsm_modem.cpp"
+        "my_module_dce.cpp"
+    INCLUDE_DIRS 
+        "include"
+        "${IDF_PATH}/components/esp-protocols/components/esp_modem/include/cxx_include"
+    REQUIRES 
+        "driver"
+        "esp_netif"
+        "nvs_flash"
+        "esp_modem"
+    PRIV_REQUIRES
+        "esp_event"
+        "console"    
+)

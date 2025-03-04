@@ -1,271 +1,328 @@
 #include <stdio.h>
-#include <inttypes.h>
-#include <time.h>
-#include <sys/time.h>  
 #include "esp_log.h"
-#include "nvs_flash.h"
 #include "esp_sleep.h"
-#include "esp_mac.h"
-#include "esp_pm.h"
-#include "esp_event.h"
-
-#include "main_config.h"
-
-#include "gsm_module.h"
-#include "sensors.h"
-#include "storage.h"
-#include "time_manager.h"
-#include "power_management.h"
-
+#include "esp_pm.h" 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
+#include "soc/rtc_cntl_reg.h"
 
-#include <string.h>
-#include "esp_netif.h"
-#include "esp_netif_ppp.h"
-#include "esp_modem_api.h"
-#include "sdkconfig.h"
+#include "power_management.h"
+#include "system_state.h"
+#include "sensors.h"
+#include "storage.h"
+#include "gsm_modem.h"
+#include "discord_api.h"
+#include "discord_config.h"
 
 
+static const char *TAG = "main";
 
-static const char *TAG = "MAIN";
+#define TIME_TO_SLEEP    1200        // Time in seconds to go to sleep        
+#define SECONDS_PER_DAY  86400      // 24 hours in seconds
+#define uS_TO_S_FACTOR   1000000ULL // Conversion factor for micro seconds to seconds
+#define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
+#define SEND_DATA_CYCLE 5  // For testing 3
 
-static EventGroupHandle_t event_group = NULL;
-static const int CONNECT_BIT = BIT0;
-static const int DISCONNECT_BIT = BIT1;
+static volatile bool data_received = false;  // Flag for data received
+battery_status_t battery;
+char message[128] = "ESP32 started successfully- The measurements for the next part of the day have started";
+int i = 0;
 
-// Обработчики событий PPP и IP (оставляем как есть)
-static void on_ppp_changed(void *arg, esp_event_base_t event_base,
-                          int32_t event_id, void *event_data)
-{
-    ESP_LOGI(TAG, "PPP state changed event %" PRIu32, event_id);
-    if (event_id == NETIF_PPP_ERRORUSER) {
-        esp_netif_t **p_netif = event_data;
-        ESP_LOGI(TAG, "User interrupted event from netif:%p", *p_netif);
+// Discord configuration
+static const discord_config_t discord_cfg = {
+    .bot_token = DISCORD_BOT_TOKEN,
+    .channel_id = DISCORD_CHANNEL_ID
+};
+
+// RuuviTag data callback
+static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
+    static bool data_saved = false;  // Status flag for tracking saved data
+
+    if (data_saved) {
+        return;
     }
+    
+    // ESP_LOGI(TAG, "RuuviTag data received");
+    // ESP_LOGI(TAG, "  MAC: %s", measurement->mac_address);
+    // ESP_LOGI(TAG, "  Temperature: %.2f °C", measurement->temperature);
+    // ESP_LOGI(TAG, "  Humidity: %.2f %%", measurement->humidity);
+    // ESP_LOGI(TAG, "  Timestamp: %llu", measurement->timestamp);
+
+    // Mearurements saiving
+    esp_err_t ret = storage_save_measurement(measurement);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save measurement");
+    } else {
+        data_saved = true;     // Mark that we saved
+        data_received = true;  // Set the flag for the main cycle
+    }
+>>>>>>> c8d2a13090e15505f1777d7766a5bbab10d9c850
 }
 
-static void on_ip_event(void *arg, esp_event_base_t event_base,
-                       int32_t event_id, void *event_data)
-{
-    if (event_id == IP_EVENT_PPP_GOT_IP) {
-        esp_netif_dns_info_t dns_info;
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        esp_netif_t *netif = event->esp_netif;
-
-        ESP_LOGI(TAG, "Modem Connect to PPP Server");
-        ESP_LOGI(TAG, "~~~~~~~~~~~~~~");
-        ESP_LOGI(TAG, "IP          : " IPSTR, IP2STR(&event->ip_info.ip));
-        ESP_LOGI(TAG, "Netmask     : " IPSTR, IP2STR(&event->ip_info.netmask));
-        ESP_LOGI(TAG, "Gateway     : " IPSTR, IP2STR(&event->ip_info.gw));
-        esp_netif_get_dns_info(netif, 0, &dns_info);
-        ESP_LOGI(TAG, "Name Server1: " IPSTR, IP2STR(&dns_info.ip.u_addr.ip4));
-        esp_netif_get_dns_info(netif, 1, &dns_info);
-        ESP_LOGI(TAG, "Name Server2: " IPSTR, IP2STR(&dns_info.ip.u_addr.ip4));
-        ESP_LOGI(TAG, "~~~~~~~~~~~~~~");
-        xEventGroupSetBits(event_group, CONNECT_BIT);
-    } else if (event_id == IP_EVENT_PPP_LOST_IP) {
-        ESP_LOGI(TAG, "Modem Disconnect from PPP Server");
-        xEventGroupSetBits(event_group, DISCONNECT_BIT);
-    }
+// Unsuccessful initialization
+static void unsuccessful_init() {
+    //ESP_LOGE(TAG, "Failed to initialize GSM or Discord API");
+    storage_append_log("Unsuccessful initialization detected");
+    storage_set_error_flag();
+    modem_power_off();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
 }
 
+// Main function
 void app_main(void)
-{
-    // Инициализация системных компонентов
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &on_ppp_changed, NULL));
+{               
+    // Variables
+    esp_err_t ret;
+    char log_buf[64];
+    bool network_initialized = false;
+    bool data_from_storage_sent = false;
+    bool first_boot = false;
+    //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+    
+    // Power management initialization
+    ESP_ERROR_CHECK(power_management_init());
+    
+    
+    // Storage initialization
+    ESP_ERROR_CHECK(storage_init());
 
-    // Конфигурация PPP netif
-    esp_modem_dce_config_t dce_config = ESP_MODEM_DCE_DEFAULT_CONFIG(MODEM_PPP_APN);
-    esp_netif_config_t netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
-    esp_netif_t *esp_netif = esp_netif_new(&netif_ppp_config);
-    assert(esp_netif);
+    // Get the current system state
+    system_state_t current_state = storage_get_system_state();
+    
+    // For debugging, add a log about the current state
+    snprintf(log_buf, sizeof(log_buf), "Current system state: %d", current_state);
+    storage_append_log(log_buf);
 
-    event_group = xEventGroupCreate();
-
-    // Конфигурация DTE
-    esp_modem_dte_config_t dte_config = ESP_MODEM_DTE_DEFAULT_CONFIG();
-    // Настройка UART
-    dte_config.uart_config.tx_io_num = MODEM_UART_TX_PIN;
-    dte_config.uart_config.rx_io_num = MODEM_UART_RX_PIN;
-    dte_config.uart_config.flow_control = MODEM_FLOW_CONTROL;
-    dte_config.uart_config.rx_buffer_size = MODEM_UART_RX_BUFFER_SIZE;
-    dte_config.uart_config.tx_buffer_size = MODEM_UART_TX_BUFFER_SIZE;
-    dte_config.uart_config.event_queue_size = MODEM_UART_EVENT_QUEUE_SIZE;
-    dte_config.task_stack_size = MODEM_UART_EVENT_TASK_STACK_SIZE;
-    dte_config.task_priority = MODEM_UART_EVENT_TASK_PRIORITY;
-    dte_config.dte_buffer_size = MODEM_UART_RX_BUFFER_SIZE / 2;
-
-    // Инициализация модема A7670
-    ESP_LOGI(TAG, "Initializing esp_modem for the A7670 module...");
-    esp_modem_dce_t *dce = esp_modem_new(&dte_config, &dce_config, esp_netif);
-    assert(dce);
-
-    // Проверка PIN-кода (если требуется)
-    #if CONFIG_EXAMPLE_NEED_SIM_PIN == 1
-    bool pin_ok = false;
-    if (esp_modem_read_pin(dce, &pin_ok) == ESP_OK && pin_ok == false) {
-        if (esp_modem_set_pin(dce, CONFIG_EXAMPLE_SIM_PIN) == ESP_OK) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        } else {
-            ESP_LOGE(TAG, "Pin setting failed");
-            return;
-        }
+    // Counter checking
+    uint32_t boot_count = storage_get_boot_count();
+    sniprintf(log_buf, sizeof(log_buf), "Boot count before work cycle: %lu", boot_count);
+    storage_append_log(log_buf);
+    
+    // Processing system states
+    switch (current_state) {
+        case STATE_FIRST_BLOCK_RECOVERY:
+            storage_append_log("Entering first block recovery mode");
+            goto first_block_init;
+            
+        case STATE_SECOND_BLOCK_RECOVERY:
+            storage_append_log("Entering second block recovery mode");
+            goto second_block_init;
+            
+        case STATE_THIRD_BLOCK_RECOVERY:
+            storage_append_log("Entering third block recovery mode");
+            goto third_block_init;
+            
+        case STATE_NORMAL:
+        default:
+            // Continue normal execution //
+            break;
     }
-    #endif
-
-    // Получение уровня сигнала
-    int rssi, ber;
-    esp_err_t err = esp_modem_get_signal_quality(dce, &rssi, &ber);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get signal quality");
-        return;
-    }
-    ESP_LOGI(TAG, "Signal quality: rssi=%d, ber=%d", rssi, ber);
-
-    // Установление PPP соединения
-    err = esp_modem_set_mode(dce, ESP_MODEM_MODE_DATA);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set PPP mode");
-        return;
-    }
-
-    // Ожидание получения IP-адреса
-    ESP_LOGI(TAG, "Waiting for IP address");
-    xEventGroupWaitBits(event_group, CONNECT_BIT | DISCONNECT_BIT, pdFALSE, pdFALSE,
-                        pdMS_TO_TICKS(60000));
-
-    // Проверка статуса подключения
-    if ((xEventGroupGetBits(event_group) & CONNECT_BIT) != CONNECT_BIT) {
-        ESP_LOGW(TAG, "PPP connection failed");
-        err = esp_modem_set_mode(dce, ESP_MODEM_MODE_COMMAND);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to restore command mode");
-        }
-        return;
-    }
-
-    // Теперь соединение установлено и можно использовать PPP
-    ESP_LOGI(TAG, "PPP connection established");
-
-    // Здесь можно добавить основной код приложения
-
-    // Очистка ресурсов
-    esp_modem_destroy(dce);
-    esp_netif_destroy(esp_netif);
-}
-
-
-
-// #define TIME_TO_SLEEP    600        // Time in seconds to go to sleep        
-// #define SECONDS_PER_DAY  86400      // 24 hours in seconds
-// #define uS_TO_S_FACTOR   1000000ULL // Conversion factor for micro seconds to seconds
-// #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0 // Disable NimBLE logs
-
-
-
-// static volatile bool data_received = false;  // Flag for data received
-
-// static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
-//    ESP_LOGI(TAG, "RuuviTag data:");
-//    ESP_LOGI(TAG, "  MAC: %s", measurement->mac_address);
-//    ESP_LOGI(TAG, "  Temperature: %.2f °C", measurement->temperature);
-//    ESP_LOGI(TAG, "  Humidity: %.2f %%", measurement->humidity);
-//    ESP_LOGI(TAG, "  Timestamp: %s", measurement->timestamp);
-
-//    // Save measurement to SPIFFS
-//    esp_err_t ret = storage_save_measurement(measurement);
-//    if (ret != ESP_OK) {
-//        ESP_LOGE(TAG, "Failed to save measurement");
-//    }
-
-//    data_received = true;
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     
-    // // Power management initialization
-    // ESP_ERROR_CHECK(power_management_init());
+    // --- BLOCK 1: Special operations for the first boot ---
+    if (boot_count == 0) {
+        first_boot = true; 
 
-    // // Storage initialization  
-    // ESP_ERROR_CHECK(storage_init());
-
-    // // Check if this is first boot
-    // if (storage_is_first_boot()) {
-    //     ESP_LOGI(TAG, "First boot detected, initializing systems");
+        storage_append_log("First boot operations");
         
+        // Setting the state for the first block
+        storage_set_system_state(STATE_FIRST_BLOCK_RECOVERY);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+first_block_init:
+
+        // Modem initialization for the first message
+        ret = gsm_modem_init();
+        if (ret != ESP_OK) {
+            storage_append_log("GSM modem init failed in first boot");
+            unsuccessful_init();
+        } else {
+            network_initialized = true;
+        }
+
+        // Setting the normal state
+        storage_set_system_state(STATE_NORMAL);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        // Discord API initialization for the first message
+        ret = discord_init(&discord_cfg);
+        if (ret != ESP_OK) {
+            storage_append_log("Discord init failed in first boot");
+            unsuccessful_init();
+        }
+        // Sending the first message
+        ret = discord_send_message(message);
+        if (ret != ESP_OK) {
+            storage_append_log("Failed to send first boot message");
+        } 
+
+        storage_append_log("Done");
         
-    //     // Initialize GSM module and try to connect
-    //     ESP_ERROR_CHECK(gsm_module_init());
+    }
+    
+// --- BLOCK 2: Data collection (for all cycles) ---
+// data_collection:
+    // Mark that there was an error in the previous cycle
+    bool error_in_prev_cycle = storage_get_error_flag();    
+    if(!error_in_prev_cycle) {
+        storage_append_log("Starting data collection");
+        data_received = false;
+        // Sensors initialization
+        ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
         
+        // Waiting for data
+        const int MAX_WAIT_TIME_MS = 10000;
+        int waited_ms = 0;
+        const int CHECK_INTERVAL_MS = 500;
         
-    //     // Mark first boot as completed
-    //     ESP_ERROR_CHECK(storage_set_first_boot_completed());
-    //     ESP_LOGI(TAG, "First boot setup completed");
-    // }
+        while (!data_received && waited_ms < MAX_WAIT_TIME_MS) {
+            vTaskDelay(pdMS_TO_TICKS(CHECK_INTERVAL_MS));
+            waited_ms += CHECK_INTERVAL_MS;
+        }
+        
+        if (!data_received) {
+            storage_append_log("Failed to receive sensor data");
+        } 
 
-    // // Increment and save the counter
-    // ESP_ERROR_CHECK(storage_increment_boot_count());
+        // Increment the counter 
+        ESP_ERROR_CHECK(storage_increment_boot_count());
+          
+        storage_append_log("Done");
 
-    // // Check and reset counter if 24 hours passed
-    // ESP_ERROR_CHECK(storage_check_and_reset_counter(TIME_TO_SLEEP));
+    } else {
 
-    // Get current value for output
-//     uint32_t boot_count = storage_get_boot_count();
-//     ESP_LOGI(TAG, "Boot count: %" PRIu32, boot_count);
-   
-//    data_received = false;
+        storage_append_log("Error in previous cycle was detected, skipping data collection");
+    }
 
-   // Initialize BLE scanner for RuuviTag
-//    ESP_LOGI(TAG, "Initializing RuuviTag scanner...");
-//    ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
+    boot_count = storage_get_boot_count();
 
-   // Wait for data or timeout
-//    const int MAX_WAIT_TIME_MS = 10000;  // 10 seconds maximum
-//    int waited_ms = 0;
-//    const int CHECK_INTERVAL_MS = 500;   // Check every 500 ms
+// --- BLOCK 3: Send accumulated data if target value is reached ---
+    if (boot_count >= SEND_DATA_CYCLE) {
+        storage_append_log("Sending accumulated data");
 
-//    while (!data_received && waited_ms < MAX_WAIT_TIME_MS) {
-//        vTaskDelay(CHECK_INTERVAL_MS / portTICK_PERIOD_MS);
-//        waited_ms += CHECK_INTERVAL_MS;
-//    } 
+        // Setting the state for the second block
+        storage_set_system_state(STATE_SECOND_BLOCK_RECOVERY);
+        vTaskDelay(pdMS_TO_TICKS(500));
 
-   // Print measurements in debug mode
-//    char *measurements = storage_get_measurements();
-//    if (measurements != NULL) {
-//        ESP_LOGI(TAG, "Stored data: %s", measurements);
-//        free(measurements);
-//    }
+second_block_init:
 
-   // Deinitialize BLE before going to sleep
-//    sensors_deinit();
+        // Modem initialization for data sending if it was not initialized
+        if (!network_initialized) {
+            ret = gsm_modem_init();
+            if (ret != ESP_OK) {
+                storage_append_log("GSM modem init failed for data sending");
+                unsuccessful_init();
+            } else {
+                network_initialized = true;
+            }
 
-   // Deinitialize GSM module before sleep
-   // gsm_module_deinit();
+            // Setting the normal state
+            storage_set_system_state(STATE_NORMAL);
+            vTaskDelay(pdMS_TO_TICKS(500));
 
-//    if (!data_received) {
-//        ESP_LOGW(TAG, "No data received within timeout period");
-//    }
+            // Discord API initialization for data sending
+            ret = discord_init(&discord_cfg);
+            if (ret != ESP_OK) {
+                storage_append_log("Discord init failed for data sending");
+                unsuccessful_init();
+            }
+        }
+        // Getting measurements from storage and sending them
+        if (network_initialized) {
+            
+            char *measurements = storage_get_measurements();
+            if (measurements != NULL) {
+                ret = send_measurements_with_retries(measurements, 3);
+                free(measurements);
+                
+                if (ret == ESP_OK) {
+                    ESP_ERROR_CHECK(storage_clear_measurements());
+                    ESP_ERROR_CHECK(storage_reset_counter());
+                    data_from_storage_sent = true;
+                } else {
+                    storage_append_log("Failed to send measurements");
+                }
+            }
+        }
+            
+        storage_append_log("Done");
+        
+    }
+    
+// --- BLOCK 4: Terminate the loop and send logs ---
+// end_cycle:
+    // Deinitialization of sensors
+    sensors_deinit();
 
-//    // Set timer to wake up
-//    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-//    ESP_LOGI(TAG, "Going to sleep for %d seconds", TIME_TO_SLEEP);
+    snprintf(log_buf, sizeof(log_buf), "Final boot count: %lu", storage_get_boot_count());
+    storage_append_log(log_buf);
+    
+    
+    // Sending logs if data was sent
+    if (data_from_storage_sent && !network_initialized) {
+        storage_append_log("Sending logs");
 
-//    // Deep sleep
-//    esp_deep_sleep_start();
+        // Setting the state for the third block
+        storage_set_system_state(STATE_THIRD_BLOCK_RECOVERY);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+third_block_init:
+
+        // Modem initialization for logs sending
+        ret = gsm_modem_init();
+        if (ret != ESP_OK) {
+            storage_append_log("GSM modem init failed for logs");
+            goto sleep_prepare;
+        } else {
+            network_initialized = true;
+        }
+
+        // Setting the normal state
+        storage_set_system_state(STATE_NORMAL);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        
+        // Discord API initialization for logs sending
+        ret = discord_init(&discord_cfg);
+        if (ret != ESP_OK) {
+            storage_append_log("Discord API init failed for logs");
+            gsm_modem_deinit();
+            goto sleep_prepare;
+        }
+    }
+    
+    // Sending logs if data was sent to Discord
+    if (data_from_storage_sent) {
+        send_logs_with_retries(3);
+    }
+
+    // Final deinitialization of GSM modem
+    if (first_boot && network_initialized) {
+        gsm_modem_deinit();
+    } else if (network_initialized && data_from_storage_sent) {
+        gsm_modem_deinit();
+    }
+    
+    storage_set_system_state(STATE_NORMAL);
+    
+    // Preparing for sleep
+sleep_prepare:
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    ESP_LOGI(TAG, "Going to sleep for %d seconds", TIME_TO_SLEEP);
+    esp_deep_sleep_start();
+}
+
+
+
+//     // /*------------For debuging---------------*/
+//     // // Print measurements in debug mode
+//     // char *measurements = storage_get_measurements();
+//     // if (measurements != NULL) {
+//     //     //ESP_LOGI(TAG, "Stored data: %s", measurements);
+//     //     free(measurements);
+//     // }
+//     // /*---------------------------------------*/
+
+
+
+

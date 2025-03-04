@@ -2,41 +2,138 @@
 #define STORAGE_H
 
 #include "esp_err.h"
+#include <stdbool.h>
 #include "sensors.h"
 #include <stdint.h>
+#include "system_state.h"
 
 
-// Initialize NVS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+/**
+ * @brief Initialize NVS storage
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
 esp_err_t storage_init(void);
 
-// Get the boot count from NVS
+
+/**
+ * @brief Get the boot count from NVS
+ * 
+ * @return uint32_t Boot count
+ */
 uint32_t storage_get_boot_count(void);
 
-// Increment the boot count and save it to NVS
+
+/**
+ * @brief Increment the boot count and save it to NVS
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
 esp_err_t storage_increment_boot_count(void);
 
-// Check if 24 hours passed and reset the counter
-esp_err_t storage_check_and_reset_counter(uint32_t sleep_time);
 
-// Save a measurement to SPIFFS
+/**
+ * @brief Save a measurement to SPIFFS
+ * 
+ * @param measurement Measurement to save
+ * @return esp_err_t ESP_OK on success
+ */
 esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement);
 
-// Get the measurements from SPIFFS
+
+/**
+ * @brief Get the measurements from SPIFFS
+ * 
+ * @return char* Measurements in JSON format
+ * 
+ */
 char* storage_get_measurements(void);
 
-// Clear the measurements from SPIFFS
+
+/**
+ * @brief Clear the measurements from SPIFFS
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
 esp_err_t storage_clear_measurements(void);
 
-/**
- * @brief Check if this is the first boot of the device
- * @return true if first boot, false otherwise
- */
-bool storage_is_first_boot(void);
+
 
 /**
- * @brief Mark first boot as completed
- * @return ESP_OK on success
+ * @brief Append a log message to the log file
+ * 
+ * @param log_message Log message
+ * @return esp_err_t ESP_OK on success
  */
-esp_err_t storage_set_first_boot_completed(void);
+esp_err_t storage_append_log(const char* log_message);
 
-#endif // STORAGE_H
+
+
+/**
+ * @brief Get the logs from the log file
+ * 
+ * @return char* Logs
+ */
+char* storage_get_logs(void);
+
+
+
+/**
+ * @brief Reset the boot counter
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_reset_counter(void);
+
+
+/**
+ * @brief Set the error flag if error occurred in last cycle
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_set_error_flag(void);
+
+
+/**
+ * @brief Get the error flag
+ * 
+ * @return bool Error flag
+ */
+bool storage_get_error_flag(void);
+
+
+/**
+ * @brief Clear the error flag
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_clear_error_flag(void);
+
+
+/**
+ * @brief Set the system state
+ * 
+ * @param state System state
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_set_system_state(system_state_t state);
+
+
+/**
+ * @brief Get the system state
+ * 
+ * @return system_state_t System state
+ */
+system_state_t storage_get_system_state(void);
+
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* STORAGE_H */
