@@ -31,7 +31,7 @@
 
 3. **Data transmission**:
 - After `SEND_DATA_CYCLE` boot cycles, the system sends the accumulated data to Discord.
-&nbsp;- If the transmission fails, it retries up to 3 times.
+- If the transmission fails, it retries up to 3 times.
 
 4. **Sleep mode**:
 - After completing the cycle, the ESP32 enter deep sleep for `TIME_TO_SLEEP` seconds.
