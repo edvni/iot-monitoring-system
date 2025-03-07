@@ -1,5 +1,16 @@
 # Project Overview
 
+### Hardware
+
+- **Development board**
+Lilygo T-A7670E Wireless module ESP32 Chip 4G LTE CAT1 MCU32
+![lilygo chip](images/hardware/lilygo_t-a7670e.png)
+
+- **Sensor**
+RuuviTag Pro Bluetooth Sensor
+![ruuvitag sensor](images/hardware/ruuvitagpro_exploded.png)
+
+
 ### Main Components
 
 - **Main Logic** (`main.c`): Handles the overall workflow, including sensor data collection, storage and transmission.
