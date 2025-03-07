@@ -21,17 +21,17 @@
 # Working logic
 
 1. **Boot process**:
-&nbsp;- The system checks the boot count and system state from NVS.
-&nbsp;- If it's the first boot, it initializes the GSM modem and sends a startup message to Discord
-&nbsp;- If it's a normal boot, it proceeds with data collection and transmission
+- The system checks the boot count and system state from NVS.
+- If it's the first boot, it initializes the GSM modem and sends a startup message to Discord
+- If it's a normal boot, it proceeds with data collection and transmission
 
 2. **Data collection**:
-&nbsp;- The RuuviTag sensor data is collected via BLE and stored in a JSON file in SPIFFS
-&nbsp;- The system waits up to 10 seconds to receive sensor data.
+- The RuuviTag sensor data is collected via BLE and stored in a JSON file in SPIFFS
+- The system waits up to 10 seconds to receive sensor data.
 
 3. **Data transmission**:
-&nbsp;- After `SEND_DATA_CYCLE` boot cycles, the system sends the accumulated data to Discord.
+- After `SEND_DATA_CYCLE` boot cycles, the system sends the accumulated data to Discord.
 &nbsp;- If the transmission fails, it retries up to 3 times.
 
 4. **Sleep mode**:
-&nbsp;- After completing the cycle, the ESP32 enter deep sleep for `TIME_TO_SLEEP` seconds.
+- After completing the cycle, the ESP32 enter deep sleep for `TIME_TO_SLEEP` seconds.
