@@ -2,12 +2,12 @@
 
 ### Hardware
 
-- **Development board**
-Lilygo T-A7670E Wireless module ESP32 Chip 4G LTE CAT1 MCU32
+- **Development board**<br>
+Lilygo T-A7670E Wireless module ESP32 Chip 4G LTE CAT1 MCU32<br>
 ![lilygo chip](images/hardware/lilygo_t-a7670e.png)
 
-- **Sensor**
-RuuviTag Pro Bluetooth Sensor
+- **Sensor**<br>
+RuuviTag Pro Bluetooth Sensor<br>
 ![ruuvitag sensor](images/hardware/ruuvitagpro_exploded.png)
 
 
