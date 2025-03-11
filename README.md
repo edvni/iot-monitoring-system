@@ -4,6 +4,11 @@
 3. Check branches `git branch -a`
 4. Switch to Vladimir branch `git checkout Vladimir`
 5. Pull the latest changes `git pull origin Vladimir`
+6. Clone esp-protocols: Navigate to `C:\Users\USER_NAME\esp\v5.4\esp-idf\components` and execute command: `git clone --recursive https://github.com/espressif/esp-protocols.git`
+7. Make sure ESP-IDF v5.4.0 is selected
+8. To build: In ESP-IDF terminal: `idf.py build`
+9. Connect ESP32 device via USB
+10. To flash and monitor: In ESP-IDF terminal: `idf.py flash monitor`
 
 ## For changes:
 6. Create own branch for your changes (if needed) `git checkout -b my-feature-branch`
