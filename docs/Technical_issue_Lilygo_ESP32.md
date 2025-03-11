@@ -39,3 +39,7 @@ In other words, we:
 - The Bluetooth module uses exclusively Low Energy mode. We also disabled device pairing capabilities and all other unnecessary options of the Bluetooth module
 - Before the device's deep sleep mode, we deinitialize all modules
 - Logging process only in code debugging mode
+
+## Two-Week Testing Results
+
+As a result of the module running on the new software using an 18650 battery (3.7V), it can be stated that the battery is consumed extremely economically. In other words, the voltage on the battery decreased by 0.032V and at the time of the end of measurement was 4.058V. It should be noted that data transmission via the mobile network occurred 4 times a day.
