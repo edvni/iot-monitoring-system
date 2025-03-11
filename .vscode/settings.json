@@ -1,6 +1,6 @@
 {
-    "idf.espIdfPathWin": "C:\\Users\\vdis0\\esp\\v5.4\\esp-idf",
-    "idf.toolsPathWin": "c:\\Users\\vdis0\\.espressif",
+    "idf.espIdfPathWin": "${env:IDF_PATH}",
+    "idf.toolsPathWin": "${env:IDF_TOOLS_PATH}",
     "files.associations": {
         "*.sqlbook": "sql",
         "*.ndjson": "jsonl",
@@ -98,5 +98,5 @@
         "typeinfo": "cpp",
         "variant": "cpp"
     },
-    "idf.pythonInstallPath": "c:\\Users\\vdis0\\.espressif\\tools\\idf-python\\3.11.2\\python.exe"
+    "idf.pythonInstallPath": "${env:IDF_PYTHON_PATH}"
 }
