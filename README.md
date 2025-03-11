@@ -1,3 +1,16 @@
+# Getting started as of 11.3.2025 14:32
+1. Clone repository
+2. Navigate to project directory `cd <project-directory>`
+3. Check branches `git branch -a`
+4. Switch to Vladimir branch `git checkout Vladimir`
+5. Pull the latest changes `git pull origin Vladimir`
+
+## For changes:
+6. Create own branch for your changes (if needed) `git checkout -b my-feature-branch`
+7. Make changes and commit them: `git add .` `git commit -m "Description of changes"`
+8. Push branch to remote repository `git push my-feature-branch:target-branch`
+9. Create pull request!
+
 # Project Overview
 
 ### Hardware
