@@ -2,4 +2,3 @@ build/
 managed_components/
 idf_component.yml
 dependencies.lock
-.vscode/settings.json

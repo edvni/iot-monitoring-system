@@ -1,5 +1,4 @@
 // json_helper.c
-#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "json_helper.h"
 #include "esp_log.h"
 #include "cJSON.h"
