@@ -110,76 +110,87 @@ static bool check_spiffs_status(void) {
 
 // Save a measurement to SPIFFS
 esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
-    if (!check_spiffs_status()) {
-        return ESP_ERR_INVALID_STATE;
-    }
+   if (!check_spiffs_status()) {
+       return ESP_ERR_INVALID_STATE;
+   }
 
-    // Read existing measurements
-    cJSON *measurements_array = NULL;
-    FILE* f = fopen(MEASUREMENTS_FILE, "r");
-    
-    if (f != NULL) {
-        // Define the file size
-        fseek(f, 0, SEEK_END);
-        long fsize = ftell(f);
-        fseek(f, 0, SEEK_SET);
+   ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
+   struct stat st;
+   if (stat(MEASUREMENTS_FILE, &st) == 0) {
+       ESP_LOGI(TAG, "File exists, size: %ld bytes", st.st_size);
+   } else {
+       ESP_LOGI(TAG, "File does not exist, creating new");
+   }
 
-        if (fsize > 0) {  // Check that the file is not empty
-            char *json_str = malloc(fsize + 1);
-            if (json_str != NULL) {
-                size_t read_size = fread(json_str, 1, fsize, f);
-                if (read_size == (size_t)fsize) {
-                    json_str[fsize] = '\0';
-                    measurements_array = cJSON_Parse(json_str);
-                }
-                free(json_str);
-            }
-        }
-        fclose(f);
-    }
+   // Read existing measurements
+   cJSON *measurements_array = NULL;
+   FILE* f = fopen(MEASUREMENTS_FILE, "r");
+   
+   if (f != NULL) {
+       fseek(f, 0, SEEK_END);
+       long fsize = ftell(f);
+       fseek(f, 0, SEEK_SET);
 
-    // If the array does not exist or could not be read, create a new one
-        if (measurements_array == NULL) {
-        measurements_array = cJSON_CreateArray();
-        if (measurements_array == NULL) {
-            ESP_LOGE(TAG, "Failed to create measurements array");
-            return ESP_ERR_NO_MEM;
-        }
-    }
+       char *json_str = malloc(fsize + 1);
+       if (json_str != NULL) {
+           if (fread(json_str, 1, fsize, f) == (size_t)fsize) {
+               json_str[fsize] = '\0';
+               measurements_array = cJSON_Parse(json_str);
+           }
+           free(json_str);
+       }
+       fclose(f);
+   }
 
-    // Add new measurement
-    cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
-    if (measurement_obj == NULL) {
-        ESP_LOGE(TAG, "Failed to create measurement object");
-        cJSON_Delete(measurements_array);
-        return ESP_FAIL;
-    }
+   if (measurements_array == NULL) {
+       measurements_array = cJSON_CreateArray();
+       if (measurements_array == NULL) {
+           return ESP_ERR_NO_MEM;
+       }
+   }
 
-    if (!cJSON_AddItemToArray(measurements_array, measurement_obj)) {
-        ESP_LOGE(TAG, "Failed to add measurement to array");
-        cJSON_Delete(measurement_obj);
-        cJSON_Delete(measurements_array);
-        return ESP_FAIL;
-    }
+   ESP_LOGI(TAG, "Array size before adding: %d", cJSON_GetArraySize(measurements_array));
 
-    // Save updated array
-    char *new_json_str = cJSON_PrintUnformatted(measurements_array);  
-    cJSON_Delete(measurements_array);
+   // Add new measurement
+   cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
+   if (measurement_obj == NULL || !cJSON_AddItemToArray(measurements_array, measurement_obj)) {
+       cJSON_Delete(measurements_array);
+       return ESP_FAIL;
+   }
 
-    if (new_json_str == NULL) {
-        ESP_LOGE(TAG, "Failed to print JSON string");
-        return ESP_ERR_NO_MEM;
-    }
+   ESP_LOGI(TAG, "Array size after adding: %d", cJSON_GetArraySize(measurements_array));
 
    // Save updated array
    char *new_json_str = cJSON_PrintUnformatted(measurements_array);
    cJSON_Delete(measurements_array);
 
-    fprintf(f, "%s", new_json_str);
-    fclose(f);
-    free(new_json_str);
+   if (new_json_str == NULL) {
+       return ESP_ERR_NO_MEM;
+   }
 
-    return ESP_OK;
+   f = fopen(MEASUREMENTS_FILE, "w");
+   if (f == NULL) {
+       free(new_json_str);
+       return ESP_FAIL;
+   }
+
+   fprintf(f, "%s", new_json_str);
+   fclose(f);
+   // ESP_LOGI(TAG, "Saved data: %s", new_json_str);
+   free(new_json_str);
+
+   // Verify file
+   f = fopen(MEASUREMENTS_FILE, "r");
+   if (f != NULL) {
+       fseek(f, 0, SEEK_END);
+       long size = ftell(f);
+       fclose(f);
+       ESP_LOGI(TAG, "File verification: size = %ld bytes", size);
+   } else {
+       ESP_LOGE(TAG, "File verification failed!");
+   }
+
+   return ESP_OK;
 }
 
 // Getting the measurements from SPIFFS

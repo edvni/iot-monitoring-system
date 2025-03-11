@@ -10,7 +10,7 @@ typedef struct {
     char mac_address[18];    // MAC address as string "XX:XX:XX:XX:XX:XX"
     float temperature;       // Temperature in Celsius
     float humidity;         // Relative humidity percentage
-    char timestamp[32];     // Timestamp as string "YYYY-MM-DD HH:MM:SS"
+    uint64_t timestamp;     // UNIX timestamp of measurement
 } ruuvi_measurement_t;
 
 /**

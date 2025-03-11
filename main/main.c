@@ -56,7 +56,6 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
         data_saved = true;     // Mark that we saved
         data_received = true;  // Set the flag for the main cycle
     }
->>>>>>> c8d2a13090e15505f1777d7766a5bbab10d9c850
 }
 
 // Unsuccessful initialization
