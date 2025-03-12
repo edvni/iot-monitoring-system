@@ -6,15 +6,22 @@
 5. Pull the latest changes `git pull origin Vladimir`
 6. Clone esp-protocols: Navigate to `C:\Users\USER_NAME\esp\v5.4\esp-idf\components` and execute command: `git clone --recursive https://github.com/espressif/esp-protocols.git`
 7. Make sure ESP-IDF v5.4.0 is selected
-8. To build: In ESP-IDF terminal: `idf.py build`
-9. Connect ESP32 device via USB
-10. To flash and monitor: In ESP-IDF terminal: `idf.py flash monitor`
+8. Set environment variables on your system to satisfy .vscode/settings.json paths. See below.
+9. To build: In ESP-IDF terminal: `idf.py build`
+10. Connect ESP32 device via USB
+11. To flash and monitor: In ESP-IDF terminal: `idf.py flash monitor`
 
 ## For changes:
-6. Create own branch for your changes (if needed) `git checkout -b my-feature-branch`
-7. Make changes and commit them: `git add .` `git commit -m "Description of changes"`
-8. Push branch to remote repository `git push my-feature-branch:target-branch`
-9. Create pull request!
+1. Create own branch for your changes (if needed) `git checkout -b my-feature-branch`
+2. Make changes and commit them: `git add .` `git commit -m "Description of changes"`
+3. Push branch to remote repository `git push my-feature-branch:target-branch`
+4. Create pull request!
+
+## Set environment variables to satisfy settings.json
+1. Open Windows Powershell/Git Bash etc.
+2. Type command: `setx IDF_PATH "C:\Users<username>\esp\v5.4\esp-idf"`
+3. Type command: `setx IDF_TOOLS_PATH "C:\Users<username>.espressif"`
+4. Type command: `setx IDF_PYTHON_PATH "C:\Users<username>.espressif\tools\idf-python\3.11.2\python.exe"`
 
 # Project Overview
 
