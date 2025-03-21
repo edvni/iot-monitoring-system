@@ -182,14 +182,14 @@ static bool send_at_command(std::unique_ptr<Shiny::DCE>& dce, const std::string&
     accumulated_response.clear();
     response_completed = false;
     
-    for (int retry = 0; retry < 3; retry++) {
+    for (int retry = 0; retry < 5; retry++) {
         auto result = dce->command(command + "\r", process_line, timeout);
         if (result == command_result::OK) {
             return true;
         }
         
-        ESP_LOGW(TAG, "Command failed (attempt %d/3)", retry + 1);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGW(TAG, "Command failed (attempt %d/5)", retry + 1);
+        vTaskDelay(pdMS_TO_TICKS(3000));
     }
     
     return false;

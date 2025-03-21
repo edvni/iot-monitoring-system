@@ -62,9 +62,10 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
 static void unsuccessful_init() {
     //ESP_LOGE(TAG, "Failed to initialize GSM or Discord API");
     storage_append_log("Unsuccessful initialization detected");
+    ESP_LOGE(TAG, "Restarting modem in 10 minutes");
     storage_set_error_flag();
     modem_power_off();
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(600000)); // Restart in 10 minutes
     esp_restart();
 }
 
