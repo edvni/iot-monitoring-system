@@ -1,9 +1,7 @@
-# Getting started as of 11.3.2025 14:32
+# Getting started (21.3.2025)
 1. Clone repository
 2. Navigate to project directory `cd <project-directory>`
-3. Check branches `git branch -a`
-4. Switch to Vladimir branch `git checkout Vladimir`
-5. Pull the latest changes `git pull origin Vladimir`
+5. Pull the latest changes `git pull origin main`
 6. Clone esp-protocols: Navigate to `C:\Users\USER_NAME\esp\v5.4\esp-idf\components` and execute command: `git clone --recursive https://github.com/espressif/esp-protocols.git`
 7. Make sure ESP-IDF v5.4.0 is selected
 8. Set environment variables on your system to satisfy .vscode/settings.json paths. See below.
@@ -15,7 +13,7 @@
 1. Create own branch for your changes (if needed) `git checkout -b my-feature-branch`
 2. Make changes and commit them: `git add .` `git commit -m "Description of changes"`
 3. Push branch to remote repository `git push my-feature-branch:target-branch`
-4. Create pull request!
+4. Create pull request!!
 
 ## Set environment variables to satisfy settings.json
 1. Open Windows Powershell/Git Bash etc.
