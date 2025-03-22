@@ -10,7 +10,12 @@
 #include "services/gap/ble_svc_gap.h"
 
 static const char *TAG = "SENSORS";
-static const char *TARGET_MAC = "DB:C3:58:D9:03:70";
+//static const char *TARGET_MAC = "C4:D9:12:ED:63:C6";
+static const char *TARGET_MACS[] = {
+    "DB:C3:58:D9:03:70", // Vladimir RuuviTag
+    "C4:D9:12:ED:63:C6", // Edvard RuuviTag
+    "C5:71:D4:30:42:34" // Johannes RuuviTag
+};
 static ruuvi_callback_t measurement_callback = NULL;
 
 // Ruuvi manufacturer specific data
@@ -64,17 +69,25 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
                                 event->disc.addr.val[3], event->disc.addr.val[2],
                                 event->disc.addr.val[1], event->disc.addr.val[0]);
                         
-                    // Check if this is our target RuuviTag
-                    if (strcmp(measurement.mac_address, TARGET_MAC) == 0) {
-                        // Parse measurement data
-                        parse_ruuvi_data(fields.mfg_data + 2, fields.mfg_data_len - 2, &measurement);
+                        // Check if this is one of our target RuuviTags
+                        bool is_target = false;
+                        for (int i = 0; i < sizeof(TARGET_MACS) / sizeof(TARGET_MACS[0]); i++) {
+                            if (strcmp(measurement.mac_address, TARGET_MACS[i]) == 0) {
+                                is_target = true;
+                                break;
+                            }
+                        }
                         
-                        // Set timestamp
-                        measurement.timestamp = esp_timer_get_time() / 1000000;
-                        
-                        // Call user callback
-                        measurement_callback(&measurement);
-                    }
+                        if (is_target) {
+                            // Parse measurement data
+                            parse_ruuvi_data(fields.mfg_data + 2, fields.mfg_data_len - 2, &measurement);
+                            
+                            // Set timestamp
+                            measurement.timestamp = esp_timer_get_time() / 1000000;
+                            
+                            // Call user callback
+                            measurement_callback(&measurement);
+                        }
                     }
                 }
             }
