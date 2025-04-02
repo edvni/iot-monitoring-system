@@ -114,20 +114,20 @@ static command_result process_line(uint8_t *data, size_t len)
     
     accumulated_response += response;
     
-    // Если получили OK и нет ERROR - считаем что команда выполнена успешно
+    // If we received OK and no ERROR - consider command completed successfully
     if (accumulated_response.find("OK") != std::string::npos && 
         accumulated_response.find("ERROR") == std::string::npos) {
         response_completed = true;
         return command_result::OK;
     }
 
-    // Если получили ERROR - команда завершилась с ошибкой
+    // If we received ERROR - command failed
     if (accumulated_response.find("ERROR") != std::string::npos) {
         response_completed = true;
         return command_result::FAIL;
     }
     
-    // Все остальные ответы считаем промежуточными
+    // Consider all other responses as intermediate
     return command_result::TIMEOUT;
 }
 
@@ -159,8 +159,8 @@ static esp_err_t configure_modem(void)
     dte_config.uart_config.cts_io_num = MODEM_UART_CTS_PIN;
     dte_config.uart_config.flow_control = ESP_MODEM_FLOW_CONTROL_NONE;
     dte_config.uart_config.baud_rate = 115200;
-    dte_config.uart_config.rx_buffer_size = 1024 * 2;
-    dte_config.uart_config.tx_buffer_size = 1024 * 2;
+    dte_config.uart_config.rx_buffer_size = 1024 * 4;
+    dte_config.uart_config.tx_buffer_size = 1024 * 4;
     auto uart_dte = create_uart_dte(&dte_config);
 
     // DCE creation
