@@ -10,4 +10,5 @@ idf_component_register(
         power_management
         sensors
         storage
+        time_manager
 )

@@ -2,6 +2,8 @@
 #include "json_helper.h"
 #include "esp_log.h"
 #include "cJSON.h"
+#include "time_manager.h"
+#include <string.h>
 
 static const char *TAG = "JSON_HELPER";
 
@@ -13,15 +15,20 @@ cJSON* json_helper_create_measurement_object(ruuvi_measurement_t *measurement) {
         return NULL;
     }
 
-    // Buffers for rounded values
+    // Buffer for time
+    char time_str[32];
+    if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
+        strcpy(time_str, "Time not available");
+    }
+
+    // Add time stamp
+    cJSON_AddStringToObject(measurement_obj, "time", time_str);
+
+    // Existing fields
     char temp_str[10];
     char hum_str[10];
-
-    // Formatting numbers as strings with two decimal places
     snprintf(temp_str, sizeof(temp_str), "%.f", measurement->temperature);
     snprintf(hum_str, sizeof(hum_str), "%.f", measurement->humidity);
-
-    // Adding to JSON as strings
     cJSON_AddStringToObject(measurement_obj, "t", temp_str);
     cJSON_AddStringToObject(measurement_obj, "h", hum_str);
 

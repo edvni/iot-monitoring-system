@@ -14,6 +14,7 @@
 #include "gsm_modem.h"
 #include "discord_api.h"
 #include "discord_config.h"
+#include "time_manager.h"
 
 
 static const char *TAG = "main";
@@ -161,6 +162,24 @@ first_block_init:
 
         storage_append_log("Done");
         
+        if (first_boot) {
+            if (network_initialized) {
+                // Initialize and sync time
+                ret = time_manager_init();
+                if (ret != ESP_OK) {
+                    storage_append_log("Time manager init failed");
+                    unsuccessful_init();
+                }
+                
+                ret = time_manager_sync_network_time();
+                if (ret != ESP_OK) {
+                    storage_append_log("Time sync failed");
+                    unsuccessful_init();
+                }
+                
+                storage_append_log("Time synchronized successfully");
+            }
+        }
     }
     
 // --- BLOCK 2: Data collection (for all cycles) ---
@@ -315,11 +334,14 @@ sleep_prepare:
     int64_t next_trigger = storage_calculate_next_trigger_time();
     int64_t sleep_time = next_trigger - execution_time;
     
+    ESP_LOGI(TAG, "Trigger interval: %lld microseconds", next_trigger);
     ESP_LOGI(TAG, "Start time: %lld microseconds", start_time);
     ESP_LOGI(TAG, "Current time: %lld microseconds", current_time);
     ESP_LOGI(TAG, "Execution time: %lld microseconds", execution_time);
-    ESP_LOGI(TAG, "Next trigger: %lld microseconds", next_trigger);
     ESP_LOGI(TAG, "Going to sleep for %lld microseconds", sleep_time);
+    
+    // Save time before sleep //
+    time_manager_before_sleep();
     
     esp_sleep_enable_timer_wakeup(sleep_time);
     esp_deep_sleep_start();

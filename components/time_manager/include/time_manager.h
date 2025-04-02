@@ -32,4 +32,18 @@ esp_err_t time_manager_get_formatted_time(char *buffer, size_t buffer_size);
 esp_err_t time_manager_set_time(int year, int month, int day, 
                                int hour, int minute, int second);
 
+/**
+ * @brief Synchronize system time with network time servers
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t time_manager_sync_network_time(void);
+
+/**
+ * @brief Save current time before going to sleep
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t time_manager_before_sleep(void);
+
 

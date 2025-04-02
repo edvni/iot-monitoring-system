@@ -96,7 +96,8 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "sntp.h": "c"
     },
     "idf.pythonInstallPath": "C:\\Users\\vdis0\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
     "idf.portWin": "COM3"
