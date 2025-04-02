@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "soc/rtc_cntl_reg.h"
+#include "esp_timer.h"
 
 #include "power_management.h"
 #include "system_state.h"
@@ -17,16 +18,12 @@
 
 static const char *TAG = "main";
 
-#define TIME_TO_SLEEP    1200        // Time in seconds to go to sleep        
-#define SECONDS_PER_DAY  86400      // 24 hours in seconds
-#define uS_TO_S_FACTOR   1000000ULL // Conversion factor for micro seconds to seconds
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
-#define SEND_DATA_CYCLE 5  // For testing 3
+#define SEND_DATA_CYCLE 3  // For testing 3
 
 static volatile bool data_received = false;  // Flag for data received
 battery_status_t battery;
 char message[128] = "ESP32 started successfully- The measurements for the next part of the day have started";
-int i = 0;
 
 // Discord configuration
 static const discord_config_t discord_cfg = {
@@ -79,6 +76,11 @@ void app_main(void)
     bool data_from_storage_sent = false;
     bool first_boot = false;
     //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+    
+    // Save start time and trigger time
+    int64_t start_time = esp_timer_get_time();
+    storage_set_last_trigger_time(start_time);
+    vTaskDelay(pdMS_TO_TICKS(100)); // Give time for NVS to save
     
     // Power management initialization
     ESP_ERROR_CHECK(power_management_init());
@@ -307,8 +309,19 @@ third_block_init:
     
     // Preparing for sleep
 sleep_prepare:
-    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-    ESP_LOGI(TAG, "Going to sleep for %d seconds", TIME_TO_SLEEP);
+    // Calculate execution time and remaining sleep time
+    int64_t current_time = esp_timer_get_time();
+    int64_t execution_time = current_time - start_time;
+    int64_t next_trigger = storage_calculate_next_trigger_time();
+    int64_t sleep_time = next_trigger - execution_time;
+    
+    ESP_LOGI(TAG, "Start time: %lld microseconds", start_time);
+    ESP_LOGI(TAG, "Current time: %lld microseconds", current_time);
+    ESP_LOGI(TAG, "Execution time: %lld microseconds", execution_time);
+    ESP_LOGI(TAG, "Next trigger: %lld microseconds", next_trigger);
+    ESP_LOGI(TAG, "Going to sleep for %lld microseconds", sleep_time);
+    
+    esp_sleep_enable_timer_wakeup(sleep_time);
     esp_deep_sleep_start();
 }
 

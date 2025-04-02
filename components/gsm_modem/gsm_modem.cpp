@@ -114,19 +114,20 @@ static command_result process_line(uint8_t *data, size_t len)
     
     accumulated_response += response;
     
-    if (accumulated_response.find("*ATREADY") != std::string::npos) {
-        return command_result::TIMEOUT;
-    }
-    
-    if (accumulated_response.find("OK") != std::string::npos) {
+    // Если получили OK и нет ERROR - считаем что команда выполнена успешно
+    if (accumulated_response.find("OK") != std::string::npos && 
+        accumulated_response.find("ERROR") == std::string::npos) {
         response_completed = true;
         return command_result::OK;
     }
+
+    // Если получили ERROR - команда завершилась с ошибкой
     if (accumulated_response.find("ERROR") != std::string::npos) {
         response_completed = true;
         return command_result::FAIL;
     }
     
+    // Все остальные ответы считаем промежуточными
     return command_result::TIMEOUT;
 }
 
@@ -179,12 +180,13 @@ static esp_err_t configure_modem(void)
 static bool send_at_command(std::unique_ptr<Shiny::DCE>& dce, const std::string& command, uint32_t timeout = 5000) 
 {
     ESP_LOGI(TAG, "Sending command: %s", command.c_str());
-    accumulated_response.clear();
-    response_completed = false;
     
     for (int retry = 0; retry < 5; retry++) {
+        accumulated_response.clear();
+        response_completed = false;
+        
         auto result = dce->command(command + "\r", process_line, timeout);
-        if (result == command_result::OK) {
+        if (result == command_result::OK && response_completed) {
             return true;
         }
         
