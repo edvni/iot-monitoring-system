@@ -23,9 +23,6 @@ static const char *TAG = "main";
 
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 #define SEND_DATA_CYCLE 3  // For testing 3
-static void sync_time(const time_t);
-static time_t now;
-
 
 static volatile bool data_received = false;  // Flag for data received
 battery_status_t battery;
@@ -72,48 +69,6 @@ static void unsuccessful_init() {
     esp_restart();
 }
 
-// Synchronize clock from a time server
-static void sync_time(const time_t timestamp) {
-    if (timestamp <= 0) {
-        ESP_LOGE(TAG, "Invalid timestamp for time synchronization");
-        return;
-    }
-
-    // Convert timestamp to struct tm
-    struct tm timeinfo;
-    localtime_r(&timestamp, &timeinfo);
-
-    // Create timeval structure
-    struct timeval tv;
-    tv.tv_sec = timestamp; // Seconds since epoch
-    tv.tv_usec = 0; // Microseconds (set to 0)
-
-    // Set timezone for Finland (EET with DST)
-    ESP_LOGI(TAG, "Setting timezone to EET (UTC+2) with DST (UTC+3)");
-    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1); // Set timezone to EET (UTC+2) with DST (UTC+3)
-    tzset(); // Apply the timezone settings
-
-    // Set the system time
-    if (settimeofday(&tv, NULL) != 0) {
-        ESP_LOGE(TAG, "Failed to set time");
-    } else {
-        ESP_LOGI(TAG, "Time set successfully");
-    }
-
-    // Store the current time in the global now variable
-    time(&now);
-
-    // Verify the time setting
-    char time_str[64];
-    gettimeofday(&tv, NULL); // Get the current time
-    localtime_r(&tv.tv_sec, &timeinfo); // Convert to local time
-    strftime(time_str, sizeof(time_str), "%c", &timeinfo); // Format the time string
-
-    ESP_LOGI(TAG, "Time set succesfully!");
-    ESP_LOGI(TAG, "Current time: %s", time_str); // Print the current time
-
-}
-
 // Main function
 void app_main(void)
 {               
@@ -129,9 +84,6 @@ void app_main(void)
     bool data_from_storage_sent = false;
     bool first_boot = false;
     //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-
-    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
-    tzset();
     
     
     // Power management initialization
@@ -197,7 +149,7 @@ first_block_init:
             // Add time synchronization
             time_t network_time = gsm_get_network_time();
             if (network_time > 0) {
-                sync_time(network_time); // Synchronize time
+                time_manager_set_from_timestamp(network_time); // Synchronize time
                 storage_append_log("Time synchronized with NTP");
             } else {
                 storage_append_log("Failed to synchronize time with NTP");

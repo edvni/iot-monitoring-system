@@ -6,31 +6,18 @@
 
 static const char *TAG = "TIME_MANAGER";
 
-esp_err_t time_manager_init(void) {
-    // Need to set initial time to something
-    struct tm timeinfo = {
-        .tm_year = 2024 - 1900,   // Years in tm struct start from 1900
-        .tm_mon = 1,              
-        .tm_mday = 1,            
-        .tm_hour = 0,
-        .tm_min = 0,
-        .tm_sec = 0
-    };
-    struct timeval tv = {
-        .tv_sec = mktime(&timeinfo)
-    };
-    
-    esp_err_t ret = settimeofday(&tv, NULL);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set initial time");
-        return ret;
-    }
-    
-    ESP_LOGI(TAG, "Time manager initialized");
+esp_err_t time_manager_set_finland_timezone(void) {
+    ESP_LOGI(TAG, "Setting timezone to EET (UTC+2) with DST (UTC+3)");
+    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1); // EET (UTC+2) with DST (UTC+3)
+    tzset(); // Apply the timezone settings
     return ESP_OK;
 }
 
+
 esp_err_t time_manager_get_formatted_time(char *buffer, size_t buffer_size) {
+    // Ensure timezone is set before getting formatted time
+    time_manager_set_finland_timezone();
+    
     time_t now;
     struct tm timeinfo;
     
@@ -45,28 +32,32 @@ esp_err_t time_manager_get_formatted_time(char *buffer, size_t buffer_size) {
     return ESP_OK;
 }
 
-esp_err_t time_manager_set_time(int year, int month, int day, 
-                               int hour, int minute, int second) {
-    struct tm timeinfo = {
-        .tm_year = year - 1900,
-        .tm_mon = month - 1,  // Need to convert from 1-12 to 0-11 because tm_mon is 0-11
-        .tm_mday = day,
-        .tm_hour = hour,
-        .tm_min = minute,
-        .tm_sec = second
-    };
-    
-    struct timeval tv = {
-        .tv_sec = mktime(&timeinfo)
-    };
+esp_err_t time_manager_set_from_timestamp(time_t timestamp) {
+    if (timestamp <= 0) {
+        ESP_LOGE(TAG, "Invalid timestamp for time synchronization");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Make sure timezone is set
+    time_manager_set_finland_timezone();
+
+    // Set system time (UTC)
+    struct timeval tv;
+    tv.tv_sec = timestamp;
+    tv.tv_usec = 0;
     
     esp_err_t ret = settimeofday(&tv, NULL);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set time");
+        ESP_LOGE(TAG, "Failed to set time from timestamp");
         return ret;
     }
     
-    ESP_LOGI(TAG, "Time set to: %04d-%02d-%02d %02d:%02d:%02d", 
-             year, month, day, hour, minute, second);
+    // Verify the time setting
+    char time_str[64];
+    if (time_manager_get_formatted_time(time_str, sizeof(time_str)) == ESP_OK) {
+        ESP_LOGI(TAG, "Time set from timestamp. Current time: %s", time_str);
+    }
+    
     return ESP_OK;
 }
+

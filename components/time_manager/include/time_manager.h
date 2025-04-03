@@ -1,13 +1,15 @@
 #pragma once
 
 #include "esp_err.h"
+#include <time.h>
 
 /**
- * @brief Initialize time manager
+ * @brief Set timezone for Finland (EET with DST)
  * 
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t time_manager_init(void);
+esp_err_t time_manager_set_finland_timezone(void);
+
 
 /**
  * @brief Get current time as formatted string
@@ -19,18 +21,13 @@ esp_err_t time_manager_init(void);
 esp_err_t time_manager_get_formatted_time(char *buffer, size_t buffer_size);
 
 /**
- * @brief Set current time manually
+ * @brief Set time from network timestamp (UTC)
  * 
- * @param year Year (e.g., 2024)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23)
- * @param minute Minute (0-59)
- * @param second Second (0-59)
+ * @param timestamp UTC timestamp from NTP
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t time_manager_set_time(int year, int month, int day, 
-                               int hour, int minute, int second);
+esp_err_t time_manager_set_from_timestamp(time_t timestamp);
+
 
 
 
