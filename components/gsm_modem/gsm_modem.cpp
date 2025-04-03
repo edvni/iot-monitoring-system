@@ -116,17 +116,36 @@ static command_result process_line(uint8_t *data, size_t len)
     
     accumulated_response += response;
     
+    // Если обнаружили *ATREADY, продолжаем ждать
     if (accumulated_response.find("*ATREADY") != std::string::npos) {
         return command_result::TIMEOUT;
     }
     
-    if (accumulated_response.find("OK") != std::string::npos) {
+    // Проверяем ответ "OK" в текущей строке или накопленном ответе
+    if (response.find("OK") != std::string::npos || 
+        accumulated_response.find("OK") != std::string::npos) {
         response_completed = true;
         return command_result::OK;
     }
-    if (accumulated_response.find("ERROR") != std::string::npos) {
-        response_completed = true;
-        return command_result::FAIL;
+    
+    // Расширенная проверка на различные типы ошибок
+    static const std::vector<std::string> error_patterns = {
+        "ERROR", "+CME ERROR", "+CMS ERROR"
+    };
+    
+    for (const auto& pattern : error_patterns) {
+        if (response.find(pattern) != std::string::npos || 
+            accumulated_response.find(pattern) != std::string::npos) {
+            // Если в том же ответе есть "OK", то это все-таки успех
+            if (response.find("OK") != std::string::npos || 
+                accumulated_response.find("OK") != std::string::npos) {
+                response_completed = true;
+                return command_result::OK;
+            }
+            
+            response_completed = true;
+            return command_result::FAIL;
+        }
     }
     
     return command_result::TIMEOUT;
@@ -178,20 +197,28 @@ static esp_err_t configure_modem(void)
 }
 
 // Function template for sending AT command
-static bool send_at_command(std::unique_ptr<Shiny::DCE>& dce, const std::string& command, uint32_t timeout = 5000) 
+static bool send_at_command(std::unique_ptr<Shiny::DCE>& dce, const std::string& command, uint32_t timeout = 10000) 
 {
     ESP_LOGI(TAG, "Sending command: %s", command.c_str());
     accumulated_response.clear();
     response_completed = false;
     
     for (int retry = 0; retry < 3; retry++) {
-        auto result = dce->command(command + "\r", process_line, timeout);
-        if (result == command_result::OK) {
+        auto result = dce->command(command + "\r\n", process_line, timeout);
+        
+        // Небольшая задержка, чтобы дать модему время завершить свой ответ
+        vTaskDelay(pdMS_TO_TICKS(300));
+        
+        // Проверяем результат И накопленный ответ
+        if (result == command_result::OK || accumulated_response.find("OK") != std::string::npos) {
+            ESP_LOGI(TAG, "Command successful, accumulated response: %s", accumulated_response.c_str());
             return true;
         }
         
-        ESP_LOGW(TAG, "Command failed (attempt %d/3)", retry + 1);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGW(TAG, "Command failed (attempt %d/3), accumulated response: %s", 
+                 retry + 1, accumulated_response.c_str());
+        
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Задержка только перед следующей попыткой
     }
     
     return false;
@@ -344,7 +371,7 @@ extern "C" {
         }
 
         // Enabling data transfer mode
-        if (enable_data_mode(s_dce) != command_result::OK) {	
+        if (enable_data_mode(s_dce) != command_result::OK) {
             ESP_LOGE(TAG, "Modem initializing failed: Failed to enable data mode");
             return ESP_FAIL;
         }
