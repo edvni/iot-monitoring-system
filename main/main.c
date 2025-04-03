@@ -22,6 +22,8 @@ static const char *TAG = "main";
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 #define SEND_DATA_CYCLE 3  // For testing 3
 
+
+
 static volatile bool data_received = false;  // Flag for data received
 battery_status_t battery;
 char message[128] = "ESP32 started successfully- The measurements for the next part of the day have started";
@@ -60,11 +62,53 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
 static void unsuccessful_init() {
     //ESP_LOGE(TAG, "Failed to initialize GSM or Discord API");
     storage_append_log("Unsuccessful initialization detected");
-    ESP_LOGE(TAG, "Restarting modem in 10 minutes");
+    ESP_LOGE(TAG, "Restarting modem in 10 seconds");
     storage_set_error_flag();
     modem_power_off();
-    vTaskDelay(pdMS_TO_TICKS(600000)); // Restart in 10 minutes
+    vTaskDelay(pdMS_TO_TICKS(10000)); // Restart in 10 seconds
     esp_restart();
+}
+
+// Synchronize clock from a time server
+static void sync_time(const time_t timestamp) {
+    if (timestamp <= 0) {
+        ESP_LOGE(TAG, "Invalid timestamp for time synchronization");
+        return;
+    }
+
+    // Convert timestamp to struct tm
+    struct tm timeinfo;
+    localtime_r(&timestamp, &timeinfo);
+
+    // Create timeval structure
+    struct timeval tv;
+    tv.tv_sec = timestamp; // Seconds since epoch
+    tv.tv_usec = 0; // Microseconds (set to 0)
+
+    // Set timezone for Finland (EET with DST)
+    ESP_LOGI(TAG, "Setting timezone to EET (UTC+2) with DST (UTC+3)");
+    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1); // Set timezone to EET (UTC+2) with DST (UTC+3)
+    tzset(); // Apply the timezone settings
+
+    // Set the system time
+    if (settimeofday(&tv, NULL) != 0) {
+        ESP_LOGE(TAG, "Failed to set time");
+    } else {
+        ESP_LOGI(TAG, "Time set successfully");
+    }
+
+    // Store the current time in the global now variable
+    time(&now);
+
+    // Verify the time setting
+    char time_str[64];
+    gettimeofday(&tv, NULL); // Get the current time
+    localtime_r(&tv.tv_sec, &timeinfo); // Convert to local time
+    strftime(time_str, sizeof(time_str), "%c", &timeinfo); // Format the time string
+
+    ESP_LOGI(TAG, "Time set succesfully!");
+    ESP_LOGI(TAG, "Current time: %s", time_str); // Print the current time
+
 }
 
 // Main function
