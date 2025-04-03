@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
+#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +40,14 @@ esp_err_t gsm_modem_deinit(void);
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t gsm_modem_get_battery_status(battery_status_t* status);
+
+/**
+ * @brief Get current time from GSM network
+ * 
+ * @return time_t Unix timestamp on success, -1 on failure
+ */
+time_t gsm_get_network_time(void);
+
 
 /**
  * @brief Power on the modem

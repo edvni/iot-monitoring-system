@@ -1,10 +1,12 @@
 #include <cstdio>
 #include <cstring>
+#include <time.h>
 #include "sdkconfig.h"
 #include "esp_console.h"
 #include "esp_event.h"
 #include "esp_mac.h"
 #include "esp_modem_types.hpp"
+#include "esp_sntp.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "cxx_include/esp_modem_dte.hpp"
@@ -114,20 +116,19 @@ static command_result process_line(uint8_t *data, size_t len)
     
     accumulated_response += response;
     
-    // If we received OK and no ERROR - consider command completed successfully
-    if (accumulated_response.find("OK") != std::string::npos && 
-        accumulated_response.find("ERROR") == std::string::npos) {
+    if (accumulated_response.find("*ATREADY") != std::string::npos) {
+        return command_result::TIMEOUT;
+    }
+    
+    if (accumulated_response.find("OK") != std::string::npos) {
         response_completed = true;
         return command_result::OK;
     }
-
-    // If we received ERROR - command failed
     if (accumulated_response.find("ERROR") != std::string::npos) {
         response_completed = true;
         return command_result::FAIL;
     }
     
-    // Consider all other responses as intermediate
     return command_result::TIMEOUT;
 }
 
@@ -159,8 +160,8 @@ static esp_err_t configure_modem(void)
     dte_config.uart_config.cts_io_num = MODEM_UART_CTS_PIN;
     dte_config.uart_config.flow_control = ESP_MODEM_FLOW_CONTROL_NONE;
     dte_config.uart_config.baud_rate = 115200;
-    dte_config.uart_config.rx_buffer_size = 1024 * 4;
-    dte_config.uart_config.tx_buffer_size = 1024 * 4;
+    dte_config.uart_config.rx_buffer_size = 1024 * 2;
+    dte_config.uart_config.tx_buffer_size = 1024 * 2;
     auto uart_dte = create_uart_dte(&dte_config);
 
     // DCE creation
@@ -180,18 +181,17 @@ static esp_err_t configure_modem(void)
 static bool send_at_command(std::unique_ptr<Shiny::DCE>& dce, const std::string& command, uint32_t timeout = 5000) 
 {
     ESP_LOGI(TAG, "Sending command: %s", command.c_str());
+    accumulated_response.clear();
+    response_completed = false;
     
-    for (int retry = 0; retry < 5; retry++) {
-        accumulated_response.clear();
-        response_completed = false;
-        
+    for (int retry = 0; retry < 3; retry++) {
         auto result = dce->command(command + "\r", process_line, timeout);
-        if (result == command_result::OK && response_completed) {
+        if (result == command_result::OK) {
             return true;
         }
         
-        ESP_LOGW(TAG, "Command failed (attempt %d/5)", retry + 1);
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        ESP_LOGW(TAG, "Command failed (attempt %d/3)", retry + 1);
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
     
     return false;
@@ -398,6 +398,49 @@ extern "C" {
         }
         
         return ESP_FAIL;
+    }
+
+    time_t gsm_get_network_time(void) {
+        esp_netif_ip_info_t ip_info;
+        esp_netif_get_ip_info(s_esp_netif, &ip_info);
+        ESP_LOGI(TAG, "Get network time: IP address: " IPSTR, IP2STR(&ip_info.ip));
+
+        if (!s_esp_netif || ip_info.ip.addr == 0) {
+            ESP_LOGE(TAG, "Network not connected or no IP address");
+            return 0;
+        }
+        // Configure NTP
+        esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        esp_sntp_setservername(0, "pool.ntp.org");
+        esp_sntp_init();
+        
+        // Wait for time to be set
+        int retry = 0;
+        const int max_retry = 10;
+        while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < max_retry) {
+            ESP_LOGI(TAG, "Waiting for NTP time sync... (%d/%d)", retry, max_retry);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        
+        if (retry >= max_retry) {
+            ESP_LOGE(TAG, "NTP time sync failed");
+            esp_sntp_stop();
+            return 0;
+        }
+        
+        // Get synchronized time
+        time_t now;
+        time(&now);
+        char time_str[64];
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        strftime(time_str, sizeof(time_str), "%c", &timeinfo); // Format the time string
+
+        ESP_LOGI(TAG, "NTP time synchronized: %s", ctime(&now));
+        
+        // Cleanup
+        esp_sntp_stop();
+        return now;
     }
 
     esp_err_t modem_power_off(void)
