@@ -117,6 +117,11 @@ static void sync_time(const time_t timestamp) {
 // Main function
 void app_main(void)
 {               
+    // Save start time and trigger time
+    int64_t start_time = esp_timer_get_time();
+    storage_set_last_trigger_time(start_time);
+    vTaskDelay(pdMS_TO_TICKS(100)); // Give time for NVS to save
+
     // Variables
     esp_err_t ret;
     char log_buf[64];
@@ -124,11 +129,10 @@ void app_main(void)
     bool data_from_storage_sent = false;
     bool first_boot = false;
     //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
+    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
+    tzset();
     
-    // Save start time and trigger time
-    int64_t start_time = esp_timer_get_time();
-    storage_set_last_trigger_time(start_time);
-    vTaskDelay(pdMS_TO_TICKS(100)); // Give time for NVS to save
     
     // Power management initialization
     ESP_ERROR_CHECK(power_management_init());
@@ -218,24 +222,6 @@ first_block_init:
 
         storage_append_log("Done");
         
-        if (first_boot) {
-            if (network_initialized) {
-                // Initialize and sync time
-                ret = time_manager_init();
-                if (ret != ESP_OK) {
-                    storage_append_log("Time manager init failed");
-                    unsuccessful_init();
-                }
-                
-                ret = time_manager_sync_network_time();
-                if (ret != ESP_OK) {
-                    storage_append_log("Time sync failed");
-                    unsuccessful_init();
-                }
-                
-                storage_append_log("Time synchronized successfully");
-            }
-        }
     }
     
 // --- BLOCK 2: Data collection (for all cycles) ---
@@ -396,8 +382,6 @@ sleep_prepare:
     ESP_LOGI(TAG, "Execution time: %lld microseconds", execution_time);
     ESP_LOGI(TAG, "Going to sleep for %lld microseconds", sleep_time);
     
-    // Save time before sleep //
-    time_manager_before_sleep();
     
     esp_sleep_enable_timer_wakeup(sleep_time);
     esp_deep_sleep_start();
