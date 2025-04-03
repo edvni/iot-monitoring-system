@@ -21,7 +21,8 @@ static const char *TAG = "main";
 
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 #define SEND_DATA_CYCLE 3  // For testing 3
-
+static void sync_time(const time_t);
+static time_t now;
 
 
 static volatile bool data_received = false;  // Flag for data received
