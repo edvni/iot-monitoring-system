@@ -5,7 +5,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "soc/rtc_cntl_reg.h"
-#include "esp_timer.h"
+#include <time.h>
+#include <sys/time.h>
 
 #include "power_management.h"
 #include "system_state.h"
@@ -14,6 +15,7 @@
 #include "gsm_modem.h"
 #include "discord_api.h"
 #include "discord_config.h"
+#include "esp_timer.h"
 #include "time_manager.h"
 
 
@@ -187,6 +189,15 @@ first_block_init:
             unsuccessful_init();
         } else {
             network_initialized = true;
+
+            // Add time synchronization
+            time_t network_time = gsm_get_network_time();
+            if (network_time > 0) {
+                sync_time(network_time); // Synchronize time
+                storage_append_log("Time synchronized with NTP");
+            } else {
+                storage_append_log("Failed to synchronize time with NTP");
+            }
         }
 
         // Setting the normal state
