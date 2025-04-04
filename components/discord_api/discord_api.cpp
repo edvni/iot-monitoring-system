@@ -73,7 +73,7 @@ esp_err_t discord_send_message(const char *message) {
         return ESP_ERR_INVALID_STATE;
     }
     
-    // Проверка входящего сообщения
+    // Check incoming message
     if (message == NULL) {
         ESP_LOGE(TAG, "Message is NULL");
         return ESP_ERR_INVALID_ARG;
@@ -82,6 +82,14 @@ esp_err_t discord_send_message(const char *message) {
     if (strlen(message) == 0) {
         ESP_LOGE(TAG, "Message is empty");
         return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Note: Discord has a 2000 character limit for messages
+    // For longer messages use send_large_message_in_chunks in discord_tasks.c
+    size_t msg_len = strlen(message);
+    if (msg_len > 2000) {
+        ESP_LOGW(TAG, "Message length (%d) exceeds Discord limit of 2000 characters. It may be truncated.", 
+                 msg_len);
     }
 
     // URL construction for API endpoint
@@ -136,7 +144,7 @@ esp_err_t discord_send_message(const char *message) {
         return ESP_FAIL;
     }
 
-    // Headers setup - защита от ошибок при установке заголовков
+    // Headers setup - protection from errors when setting headers
     esp_err_t header_err = ESP_OK;
     header_err = esp_http_client_set_header(client, "Content-Type", "application/json");
     if (header_err != ESP_OK) {
@@ -158,7 +166,7 @@ esp_err_t discord_send_message(const char *message) {
         return ESP_FAIL;
     }
 
-    // POST request sending with дополнительной проверкой
+    // POST request sending with additional check
     esp_err_t post_err = esp_http_client_set_post_field(client, post_data, post_data_len);
     if (post_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set post field: %s", esp_err_to_name(post_err));
@@ -168,7 +176,7 @@ esp_err_t discord_send_message(const char *message) {
         return ESP_FAIL;
     }
     
-    // Выполняем запрос с защитой от исключений
+    // Performing the request with exception protection
     esp_err_t err;
     try {
         err = esp_http_client_perform(client);
@@ -202,47 +210,5 @@ esp_err_t discord_send_message(const char *message) {
     return err;
 }
 
-esp_err_t send_measurements_with_retries(const char* measurements, int max_retries) {
-    esp_err_t ret = ESP_FAIL;
-    
-    for (int i = 0; i < max_retries; i++) {
-        // Sending measurements
-        ret = discord_send_message(measurements);
-        if (ret == ESP_OK) {
-            return ESP_OK;
-        }
-        //storage_append_log("Failed to send measurements, retrying");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    
-    //storage_append_log("All measurement send retries failed");
-    return ret;
-}
 
-esp_err_t send_logs_with_retries(int max_retries) {
-    esp_err_t ret = ESP_FAIL;
-    
-    // Logs receiving
-    char* logs = storage_get_logs();
-    if (logs == NULL) {
-        return ESP_OK; 
-    }
-    
-    for (int i = 0; i < max_retries; i++) {
-   
-        ret = discord_send_message(logs);
-        if (ret == ESP_OK) {
-            // Clearing the log file after successful sending
-            unlink("/spiffs/debug_log.txt");
-            free(logs);
-            return ESP_OK;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    
-    //storage_append_log("Failed to send logs");
-    free(logs);
-    return ret;
-}
 

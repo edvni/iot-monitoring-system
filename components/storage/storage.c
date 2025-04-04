@@ -257,36 +257,91 @@ esp_err_t storage_append_log(const char* log_message) {
 
 // Getting the logs from SPIFFS
 char* storage_get_logs(void) {
+    static const char* TAG = "storage";
+    
     if (!check_spiffs_status()) {
+        ESP_LOGE(TAG, "SPIFFS not mounted, cannot read logs");
         return NULL;
     }
 
     const char* LOG_FILE = "/spiffs/debug_log.txt";
     
+    // Check if file exists first
+    struct stat st;
+    if (stat(LOG_FILE, &st) != 0) {
+        ESP_LOGE(TAG, "Log file not found");
+        return NULL;
+    }
+    
+    // Check file size
+    if (st.st_size <= 0) {
+        ESP_LOGE(TAG, "Log file is empty (size: %ld)", st.st_size);
+        return NULL;
+    }
+    
+    ESP_LOGI(TAG, "Log file size: %ld bytes", st.st_size);
+    
     FILE* f = fopen(LOG_FILE, "r");
     if (f == NULL) {
-        ESP_LOGE(TAG, "No log file found");
+        ESP_LOGE(TAG, "Failed to open log file");
         return NULL;
     }
 
+    // Get file size using fseek/ftell
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
-
-    char *log_str = malloc(fsize + 1);
+    
+    if (fsize <= 0) {
+        ESP_LOGE(TAG, "Invalid file size: %ld", fsize);
+        fclose(f);
+        return NULL;
+    }
+    
+    ESP_LOGI(TAG, "Allocating %ld bytes for logs", fsize + 1);
+    
+    // Allocate memory with safety margin
+    char *log_str = malloc(fsize + 16);
     if (log_str == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for logs");
         fclose(f);
         return NULL;
     }
 
-    if (fread(log_str, 1, fsize, f) != (size_t)fsize) {
-        free(log_str);
-        fclose(f);
-        return NULL;
+    // Read file in chunks to handle large files
+    size_t bytes_read = 0;
+    size_t total_read = 0;
+    const size_t chunk_size = 1024;
+    
+    while (total_read < (size_t)fsize) {
+        bytes_read = fread(log_str + total_read, 1, 
+                          ((size_t)fsize - total_read > chunk_size) ? 
+                           chunk_size : ((size_t)fsize - total_read), 
+                          f);
+        
+        if (bytes_read == 0) {
+            if (feof(f)) {
+                ESP_LOGW(TAG, "End of file reached before expected size");
+                break;
+            }
+            if (ferror(f)) {
+                ESP_LOGE(TAG, "Error reading log file");
+                free(log_str);
+                fclose(f);
+                return NULL;
+            }
+        }
+        
+        total_read += bytes_read;
     }
-
+    
     fclose(f);
-    log_str[fsize] = '\0';
+    
+    // Ensure null termination
+    log_str[total_read] = '\0';
+    
+    ESP_LOGI(TAG, "Successfully read %zu bytes from log file", total_read);
+    
     return log_str;
 }
 

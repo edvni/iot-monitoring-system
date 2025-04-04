@@ -30,11 +30,6 @@ static const char *TAG = "main";
 #define SEND_DATA_CYCLE 3  // For testing 3
 #define TRIGGER_INTERVAL    60000000 // 1 minute in microseconds
 
-// Function prototypes
-static esp_err_t send_measurements_with_task_retries(const char* measurements, int max_retries);
-static esp_err_t send_logs_with_task_retries(int max_retries);
-static esp_err_t send_discord_message_task(const char *message);
-
 static volatile bool data_received = false;  // Flag for data received
 // Safe message initialization
 char message[128];
@@ -44,91 +39,6 @@ static const discord_config_t discord_cfg = {
     .bot_token = DISCORD_BOT_TOKEN,
     .channel_id = DISCORD_CHANNEL_ID
 };
-
-// Discord message sending task structure
-typedef struct {
-    char message[256];
-    SemaphoreHandle_t done_semaphore;
-    esp_err_t result;
-} discord_task_data_t;
-
-// Task for sending Discord messages with a larger stack
-static void discord_send_task(void *pvParameters) {
-    discord_task_data_t *task_data = (discord_task_data_t *)pvParameters;
-    
-    ESP_LOGI(TAG, "Discord send task started, message length: %d", strlen(task_data->message));
-    
-    // Send the message
-    task_data->result = discord_send_message(task_data->message);
-    
-    // Signal completion
-    xSemaphoreGive(task_data->done_semaphore);
-    vTaskDelete(NULL);
-}
-
-// Function to send Discord message using a separate task
-static esp_err_t send_discord_message_task(const char *message) {
-    // Allocate memory for task data structure
-    discord_task_data_t *task_data = malloc(sizeof(discord_task_data_t));
-    if (task_data == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for task data");
-        return ESP_ERR_NO_MEM;
-    }
-    
-    ESP_LOGI(TAG, "Creating Discord send task");
-    
-    // Create semaphore for synchronization
-    task_data->done_semaphore = xSemaphoreCreateBinary();
-    if (task_data->done_semaphore == NULL) {
-        ESP_LOGE(TAG, "Failed to create semaphore");
-        free(task_data);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    // Copy message to task data
-    strncpy(task_data->message, message, sizeof(task_data->message) - 1);
-    task_data->message[sizeof(task_data->message) - 1] = '\0';
-    
-    // Create task with larger stack (8KB)
-    BaseType_t task_created = xTaskCreate(
-        discord_send_task,
-        "discord_send_task",
-        8192,  // 8KB stack
-        task_data,  // Pass pointer to allocated memory
-        5,     // Priority
-        NULL
-    );
-    
-    if (task_created != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create Discord send task");
-        vSemaphoreDelete(task_data->done_semaphore);
-        free(task_data);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    ESP_LOGI(TAG, "Waiting for Discord send task to complete");
-    
-    // Wait for task completion
-    esp_err_t result;
-    if (xSemaphoreTake(task_data->done_semaphore, pdMS_TO_TICKS(30000)) != pdTRUE) {
-        ESP_LOGE(TAG, "Discord send task timeout");
-        // Don't free task_data as the task might still be using it
-        vSemaphoreDelete(task_data->done_semaphore);
-        return ESP_ERR_TIMEOUT;
-    }
-    
-    // Save the result
-    result = task_data->result;
-    
-    ESP_LOGI(TAG, "Discord send task completed with result: %s", 
-             result == ESP_OK ? "OK" : "Failed");
-    
-    // Clean up
-    vSemaphoreDelete(task_data->done_semaphore);
-    free(task_data);
-    
-    return result;
-}
 
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
@@ -248,7 +158,6 @@ first_block_init:
             time_t network_time = gsm_get_network_time();
             if (network_time > 0) {
                 time_manager_set_from_timestamp(network_time); // Synchronize time
-                storage_append_log("Time synchronized with NTP");
             } else {
                 storage_append_log("Failed to synchronize time with NTP");
             }
@@ -294,27 +203,10 @@ first_block_init:
         }
         
         // Sending the first message using task
-        ret = send_discord_message_task(message);
+        ret = discord_send_message_safe(message);
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
-        } else {
-            // Add battery information to the log
-            battery_info_t battery_info;
-            if (battery_monitor_read(&battery_info) == ESP_OK) {
-                // Use safe formatting with return value check
-                int written = snprintf(log_buf, sizeof(log_buf), "Battery: %lu mV, Level: %d%%", 
-                         battery_info.voltage_mv, battery_info.level);
-                
-                // Make sure the string is correctly formatted
-                if (written < 0 || written >= (int)sizeof(log_buf)) {
-                    ESP_LOGE(TAG, "Error formatting battery info for log");
-                    storage_append_log("Error logging battery info");
-                } else {
-                    storage_append_log(log_buf);
-                }
-            }
         }
-
         storage_append_log("Done");
         
     }
@@ -488,51 +380,6 @@ sleep_prepare:
     esp_deep_sleep_start();
 }
 
-// Function to send measurements with retries using a separate task
-static esp_err_t send_measurements_with_task_retries(const char* measurements, int max_retries) {
-    esp_err_t ret = ESP_FAIL;
-    
-    for (int i = 0; i < max_retries; i++) {
-        // Sending measurements using task
-        ret = send_discord_message_task(measurements);
-        if (ret == ESP_OK) {
-            return ESP_OK;
-        }
-        storage_append_log("Failed to send measurements, retrying");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    
-    storage_append_log("All measurement send retries failed");
-    return ret;
-}
-
-// Function to send logs with retries using a separate task
-static esp_err_t send_logs_with_task_retries(int max_retries) {
-    esp_err_t ret = ESP_FAIL;
-    
-    // Logs receiving
-    char* logs = storage_get_logs();
-    if (logs == NULL) {
-        return ESP_OK; 
-    }
-    
-    for (int i = 0; i < max_retries; i++) {
-        // Sending logs using task
-        ret = send_discord_message_task(logs);
-        if (ret == ESP_OK) {
-            // Clearing the log file after successful sending
-            unlink("/spiffs/debug_log.txt");
-            free(logs);
-            return ESP_OK;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    
-    storage_append_log("Failed to send logs");
-    free(logs);
-    return ret;
-}
 
 //     // /*------------For debuging---------------*/
 //     // // Print measurements in debug mode

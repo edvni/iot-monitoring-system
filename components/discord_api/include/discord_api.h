@@ -32,12 +32,30 @@ esp_err_t discord_init(const discord_config_t* config);
 esp_err_t discord_send_message(const char *message);
 
 /**
+ * @brief Send message to Discord channel using a separate task with larger stack
+ * 
+ * @param message Message to send
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t discord_send_message_safe(const char *message);
+
+/**
  * @brief Send measurements to Discord channel
  * 
  * @param measurements Measurements to send
+ * @param max_retries Maximum number of retries
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t send_measurements_with_retries(const char* measurements, int max_retries);
+
+/**
+ * @brief Send measurements to Discord channel using a separate task with larger stack
+ * 
+ * @param measurements Measurements to send
+ * @param max_retries Maximum number of retries
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t send_measurements_with_task_retries(const char* measurements, int max_retries);
 
 /**
  * @brief Send logs to Discord channel
@@ -46,6 +64,14 @@ esp_err_t send_measurements_with_retries(const char* measurements, int max_retri
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t send_logs_with_retries(int max_retries);
+
+/**
+ * @brief Send logs to Discord channel using a separate task with larger stack
+ * 
+ * @param max_retries Maximum number of retries
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t send_logs_with_task_retries(int max_retries);
 
 #ifdef __cplusplus
 }
