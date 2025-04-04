@@ -4,9 +4,12 @@
 #include "esp_pm.h" 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "soc/rtc_cntl_reg.h"
 #include <time.h>
 #include <sys/time.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "power_management.h"
 #include "system_state.h"
@@ -17,22 +20,115 @@
 #include "discord_config.h"
 #include "esp_timer.h"
 #include "time_manager.h"
+#include "battery_monitor.h"
 
 
 static const char *TAG = "main";
 
+
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 #define SEND_DATA_CYCLE 3  // For testing 3
+#define TRIGGER_INTERVAL    60000000 // 1 minute in microseconds
+
+// Function prototypes
+static esp_err_t send_measurements_with_task_retries(const char* measurements, int max_retries);
+static esp_err_t send_logs_with_task_retries(int max_retries);
+static esp_err_t send_discord_message_task(const char *message);
 
 static volatile bool data_received = false;  // Flag for data received
-battery_status_t battery;
-char message[128] = "ESP32 started successfully- The measurements for the next part of the day have started";
+// Safe message initialization
+char message[128];
 
 // Discord configuration
 static const discord_config_t discord_cfg = {
     .bot_token = DISCORD_BOT_TOKEN,
     .channel_id = DISCORD_CHANNEL_ID
 };
+
+// Discord message sending task structure
+typedef struct {
+    char message[256];
+    SemaphoreHandle_t done_semaphore;
+    esp_err_t result;
+} discord_task_data_t;
+
+// Task for sending Discord messages with a larger stack
+static void discord_send_task(void *pvParameters) {
+    discord_task_data_t *task_data = (discord_task_data_t *)pvParameters;
+    
+    ESP_LOGI(TAG, "Discord send task started, message length: %d", strlen(task_data->message));
+    
+    // Send the message
+    task_data->result = discord_send_message(task_data->message);
+    
+    // Signal completion
+    xSemaphoreGive(task_data->done_semaphore);
+    vTaskDelete(NULL);
+}
+
+// Function to send Discord message using a separate task
+static esp_err_t send_discord_message_task(const char *message) {
+    // Allocate memory for task data structure
+    discord_task_data_t *task_data = malloc(sizeof(discord_task_data_t));
+    if (task_data == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for task data");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "Creating Discord send task");
+    
+    // Create semaphore for synchronization
+    task_data->done_semaphore = xSemaphoreCreateBinary();
+    if (task_data->done_semaphore == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore");
+        free(task_data);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Copy message to task data
+    strncpy(task_data->message, message, sizeof(task_data->message) - 1);
+    task_data->message[sizeof(task_data->message) - 1] = '\0';
+    
+    // Create task with larger stack (8KB)
+    BaseType_t task_created = xTaskCreate(
+        discord_send_task,
+        "discord_send_task",
+        8192,  // 8KB stack
+        task_data,  // Pass pointer to allocated memory
+        5,     // Priority
+        NULL
+    );
+    
+    if (task_created != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create Discord send task");
+        vSemaphoreDelete(task_data->done_semaphore);
+        free(task_data);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "Waiting for Discord send task to complete");
+    
+    // Wait for task completion
+    esp_err_t result;
+    if (xSemaphoreTake(task_data->done_semaphore, pdMS_TO_TICKS(30000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Discord send task timeout");
+        // Don't free task_data as the task might still be using it
+        vSemaphoreDelete(task_data->done_semaphore);
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    // Save the result
+    result = task_data->result;
+    
+    ESP_LOGI(TAG, "Discord send task completed with result: %s", 
+             result == ESP_OK ? "OK" : "Failed");
+    
+    // Clean up
+    vSemaphoreDelete(task_data->done_semaphore);
+    free(task_data);
+    
+    return result;
+}
 
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
@@ -74,7 +170,6 @@ void app_main(void)
 {               
     // Save start time and trigger time
     int64_t start_time = esp_timer_get_time();
-    storage_set_last_trigger_time(start_time);
     vTaskDelay(pdMS_TO_TICKS(100)); // Give time for NVS to save
 
     // Variables
@@ -85,10 +180,14 @@ void app_main(void)
     bool first_boot = false;
     //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
     
-    
     // Power management initialization
     ESP_ERROR_CHECK(power_management_init());
     
+    // Initialize battery monitor
+    ESP_ERROR_CHECK(battery_monitor_init());
+    
+    // Time manager initialization
+    time_manager_set_finland_timezone();
     
     // Storage initialization
     ESP_ERROR_CHECK(storage_init());
@@ -137,7 +236,6 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(500));
 
 first_block_init:
-
         // Modem initialization for the first message
         ret = gsm_modem_init();
         if (ret != ESP_OK) {
@@ -156,6 +254,18 @@ first_block_init:
             }
         }
 
+        // Initialize message with current date and time
+        time_t now;
+        struct tm timeinfo;
+        time(&now);
+        localtime_r(&now, &timeinfo);
+        
+        char time_str[40];
+        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
+        
+        snprintf(message, sizeof(message) - 1, "%s - Measurements started", time_str);
+        message[sizeof(message) - 1] = '\0';  // Ensure null terminator
+
         // Setting the normal state
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -166,11 +276,44 @@ first_block_init:
             storage_append_log("Discord init failed in first boot");
             unsuccessful_init();
         }
-        // Sending the first message
-        ret = discord_send_message(message);
+        
+        // Add battery information to the message
+        battery_info_t battery_info;
+        if (battery_monitor_read(&battery_info) == ESP_OK) {
+            // Limit the length of the main message to avoid buffer overflow
+            message[90] = '\0'; // Truncate message to 90 characters for guaranteed safety
+
+            // Use snprintf instead of strcat for better safety
+            char temp[200]; // Increase buffer size
+            snprintf(temp, sizeof(temp), "%s - Battery: %lu mV, Level: %d%%", 
+                     message, battery_info.voltage_mv, battery_info.level);
+            
+            // Copy back to message with length limitation
+            strncpy(message, temp, sizeof(message) - 1);
+            message[sizeof(message) - 1] = '\0'; // Ensure null terminator
+        }
+        
+        // Sending the first message using task
+        ret = send_discord_message_task(message);
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
-        } 
+        } else {
+            // Add battery information to the log
+            battery_info_t battery_info;
+            if (battery_monitor_read(&battery_info) == ESP_OK) {
+                // Use safe formatting with return value check
+                int written = snprintf(log_buf, sizeof(log_buf), "Battery: %lu mV, Level: %d%%", 
+                         battery_info.voltage_mv, battery_info.level);
+                
+                // Make sure the string is correctly formatted
+                if (written < 0 || written >= (int)sizeof(log_buf)) {
+                    ESP_LOGE(TAG, "Error formatting battery info for log");
+                    storage_append_log("Error logging battery info");
+                } else {
+                    storage_append_log(log_buf);
+                }
+            }
+        }
 
         storage_append_log("Done");
         
@@ -248,7 +391,7 @@ second_block_init:
             
             char *measurements = storage_get_measurements();
             if (measurements != NULL) {
-                ret = send_measurements_with_retries(measurements, 3);
+                ret = send_measurements_with_task_retries(measurements, 3);
                 free(measurements);
                 
                 if (ret == ESP_OK) {
@@ -270,8 +413,14 @@ second_block_init:
     // Deinitialization of sensors
     sensors_deinit();
 
-    snprintf(log_buf, sizeof(log_buf), "Final boot count: %lu", storage_get_boot_count());
-    storage_append_log(log_buf);
+    // Safe string formatting with boot count
+    int written = snprintf(log_buf, sizeof(log_buf), "Final boot count: %lu", storage_get_boot_count());
+    if (written < 0 || written >= (int)sizeof(log_buf)) {
+        ESP_LOGE(TAG, "Error formatting boot count log");
+        storage_append_log("Error logging final boot count");
+    } else {
+        storage_append_log(log_buf);
+    }
     
     
     // Sending logs if data was sent
@@ -308,7 +457,7 @@ third_block_init:
     
     // Sending logs if data was sent to Discord
     if (data_from_storage_sent) {
-        send_logs_with_retries(3);
+        send_logs_with_task_retries(3);
     }
 
     // Final deinitialization of GSM modem
@@ -325,21 +474,65 @@ sleep_prepare:
     // Calculate execution time and remaining sleep time
     int64_t current_time = esp_timer_get_time();
     int64_t execution_time = current_time - start_time;
-    int64_t next_trigger = storage_calculate_next_trigger_time();
-    int64_t sleep_time = next_trigger - execution_time;
+    int64_t sleep_time = TRIGGER_INTERVAL - execution_time;
+    if (sleep_time < 0) {
+        sleep_time = 0;
+    }
     
-    ESP_LOGI(TAG, "Trigger interval: %lld microseconds", next_trigger);
-    ESP_LOGI(TAG, "Start time: %lld microseconds", start_time);
-    ESP_LOGI(TAG, "Current time: %lld microseconds", current_time);
-    ESP_LOGI(TAG, "Execution time: %lld microseconds", execution_time);
-    ESP_LOGI(TAG, "Going to sleep for %lld microseconds", sleep_time);
+    ESP_LOGI(TAG, "Trigger interval: %.2f seconds", (float)TRIGGER_INTERVAL / 1000000.0f);
+    ESP_LOGI(TAG, "Execution time: %.2f seconds", (float)execution_time / 1000000.0f);
+    ESP_LOGI(TAG, "Going to sleep for %.2f seconds", (float)sleep_time / 1000000.0f);
     
     
     esp_sleep_enable_timer_wakeup(sleep_time);
     esp_deep_sleep_start();
 }
 
+// Function to send measurements with retries using a separate task
+static esp_err_t send_measurements_with_task_retries(const char* measurements, int max_retries) {
+    esp_err_t ret = ESP_FAIL;
+    
+    for (int i = 0; i < max_retries; i++) {
+        // Sending measurements using task
+        ret = send_discord_message_task(measurements);
+        if (ret == ESP_OK) {
+            return ESP_OK;
+        }
+        storage_append_log("Failed to send measurements, retrying");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    
+    storage_append_log("All measurement send retries failed");
+    return ret;
+}
 
+// Function to send logs with retries using a separate task
+static esp_err_t send_logs_with_task_retries(int max_retries) {
+    esp_err_t ret = ESP_FAIL;
+    
+    // Logs receiving
+    char* logs = storage_get_logs();
+    if (logs == NULL) {
+        return ESP_OK; 
+    }
+    
+    for (int i = 0; i < max_retries; i++) {
+        // Sending logs using task
+        ret = send_discord_message_task(logs);
+        if (ret == ESP_OK) {
+            // Clearing the log file after successful sending
+            unlink("/spiffs/debug_log.txt");
+            free(logs);
+            return ESP_OK;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    
+    storage_append_log("Failed to send logs");
+    free(logs);
+    return ret;
+}
 
 //     // /*------------For debuging---------------*/
 //     // // Print measurements in debug mode

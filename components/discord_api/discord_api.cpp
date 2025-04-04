@@ -1,5 +1,6 @@
 #include "discord_api.h"
 #include "discord_cert.h"
+#include "discord_config.h"
 #include "storage.h"
 #include "esp_http_client.h"
 #include "lwip/sockets.h"
@@ -15,6 +16,11 @@ static struct {
     const char* bot_token{nullptr};
     const char* channel_id{nullptr};
 } s_config;
+
+static const discord_config_t discord_cfg = {
+    .bot_token = DISCORD_BOT_TOKEN,
+    .channel_id = DISCORD_CHANNEL_ID
+};
 
 static esp_err_t discord_http_event_handler(esp_http_client_event_t *evt)
 {
@@ -48,6 +54,7 @@ static esp_err_t discord_http_event_handler(esp_http_client_event_t *evt)
 }
 
 esp_err_t discord_init(const discord_config_t* config) {
+    
     if (config == NULL || config->bot_token == NULL || config->channel_id == NULL) {
         ESP_LOGE(TAG, "Invalid configuration");
         return ESP_ERR_INVALID_ARG;
@@ -65,6 +72,17 @@ esp_err_t discord_send_message(const char *message) {
         ESP_LOGE(TAG, "Discord API not initialized inside discord_send_message");
         return ESP_ERR_INVALID_STATE;
     }
+    
+    // Проверка входящего сообщения
+    if (message == NULL) {
+        ESP_LOGE(TAG, "Message is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (strlen(message) == 0) {
+        ESP_LOGE(TAG, "Message is empty");
+        return ESP_ERR_INVALID_ARG;
+    }
 
     // URL construction for API endpoint
     char url[128];
@@ -76,11 +94,27 @@ esp_err_t discord_send_message(const char *message) {
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) {
         ESP_LOGE(TAG, "Failed to create JSON object");
-        return ESP_ERR_NO_MEM;
+        return ESP_FAIL;
     }
 
     cJSON_AddStringToObject(root, "content", message);
+    if (cJSON_GetObjectItem(root, "content") == NULL) {
+        ESP_LOGE(TAG, "Failed to add message to JSON");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
     char *post_data = cJSON_PrintUnformatted(root);
+    size_t post_data_len = 0;
+    
+    if (post_data == NULL) {
+        ESP_LOGE(TAG, "Failed to create JSON string");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
+    post_data_len = strlen(post_data);
+    ESP_LOGI(TAG, "JSON data length: %d", post_data_len);
 
     // HTTP client configuration
     esp_http_client_config_t config = {};
@@ -102,16 +136,49 @@ esp_err_t discord_send_message(const char *message) {
         return ESP_FAIL;
     }
 
-    // Headers setup
-    esp_http_client_set_header(client, "Content-Type", "application/json");
+    // Headers setup - защита от ошибок при установке заголовков
+    esp_err_t header_err = ESP_OK;
+    header_err = esp_http_client_set_header(client, "Content-Type", "application/json");
+    if (header_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set Content-Type header: %s", esp_err_to_name(header_err));
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
+    
     char auth_header[128];
     snprintf(auth_header, sizeof(auth_header), "Bot %s", s_config.bot_token);
-    esp_http_client_set_header(client, "Authorization", auth_header);
+    header_err = esp_http_client_set_header(client, "Authorization", auth_header);
+    if (header_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set Authorization header: %s", esp_err_to_name(header_err));
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
 
+    // POST request sending with дополнительной проверкой
+    esp_err_t post_err = esp_http_client_set_post_field(client, post_data, post_data_len);
+    if (post_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set post field: %s", esp_err_to_name(post_err));
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
     
-    // POST request sending
-    esp_http_client_set_post_field(client, post_data, strlen(post_data));
-    esp_err_t err = esp_http_client_perform(client);
+    // Выполняем запрос с защитой от исключений
+    esp_err_t err;
+    try {
+        err = esp_http_client_perform(client);
+    } catch (...) {
+        ESP_LOGE(TAG, "Exception occurred during HTTP request");
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
 
     if (err == ESP_OK) {
         int status_code = esp_http_client_get_status_code(client);

@@ -16,7 +16,6 @@
 #define MEASUREMENTS_FILE   "/spiffs/measurements.json"
 #define WDT_TIMEOUT_LONG    30000    // 30 seconds for initialization
 #define WDT_TIMEOUT_SHORT   5000     // 5 seconds for normal operation
-#define TRIGGER_INTERVAL    60000000 // 1 minute in microseconds
 #define BOOT_COUNT_KEY "boot_count"
 #define ERROR_FLAG_KEY "error_flag"
 #define GSM_FIRST_BLOCK_KEY "gsm_first_block"
@@ -328,40 +327,3 @@ system_state_t storage_get_system_state(void) {
     return (ret == ESP_OK) ? (system_state_t)state : STATE_NORMAL;
 }
 
-// Get the last trigger time
-int64_t storage_get_last_trigger_time(void) {
-    int64_t last_time = 0;
-    if (nvs_get_i64(my_nvs_handle, LAST_TRIGGER_TIME_KEY, &last_time) == ESP_ERR_NVS_NOT_FOUND) {
-        ESP_LOGI(TAG, "Last trigger time not found, starting from 0");
-    }
-    return last_time;
-}
-
-// Set the last trigger time
-esp_err_t storage_set_last_trigger_time(int64_t time) {
-    esp_err_t ret = nvs_set_i64(my_nvs_handle, LAST_TRIGGER_TIME_KEY, time);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
-}
-
-// Calculate time until next trigger
-int64_t storage_calculate_next_trigger_time(void) {
-    int64_t last_time = storage_get_last_trigger_time();
-    int64_t current_time = esp_timer_get_time();
-    
-    // If this is first run, use current time as last trigger time
-    if (last_time == 0) {
-        storage_set_last_trigger_time(current_time);
-        return TRIGGER_INTERVAL;
-    }
-    
-    // Calculate time since last trigger
-    int64_t time_since_last = current_time - last_time;
-    
-    // If more than interval has passed, trigger immediately
-    if (time_since_last >= TRIGGER_INTERVAL) {
-        return 0;
-    }
-    
-    // Calculate time until next trigger
-    return TRIGGER_INTERVAL - time_since_last;
-}
