@@ -21,6 +21,7 @@
 #include "esp_timer.h"
 #include "time_manager.h"
 #include "battery_monitor.h"
+#include "reporter.h"
 
 
 static const char *TAG = "main";
@@ -33,12 +34,6 @@ static const char *TAG = "main";
 static volatile bool data_received = false;  // Flag for data received
 // Safe message initialization
 char message[128];
-
-// Discord configuration
-static const discord_config_t discord_cfg = {
-    .bot_token = DISCORD_BOT_TOKEN,
-    .channel_id = DISCORD_CHANNEL_ID
-};
 
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
@@ -163,43 +158,21 @@ first_block_init:
             }
         }
 
-        // Initialize message with current date and time
-        time_t now;
-        struct tm timeinfo;
-        time(&now);
-        localtime_r(&now, &timeinfo);
-        
-        char time_str[40];
-        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
-        
-        snprintf(message, sizeof(message) - 1, "%s - Measurements started", time_str);
-        message[sizeof(message) - 1] = '\0';  // Ensure null terminator
-
         // Setting the normal state
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Discord API initialization for the first message
-        ret = discord_init(&discord_cfg);
+        ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord init failed in first boot");
             unsuccessful_init();
         }
         
-        // Add battery information to the message
-        battery_info_t battery_info;
-        if (battery_monitor_read(&battery_info) == ESP_OK) {
-            // Limit the length of the main message to avoid buffer overflow
-            message[90] = '\0'; // Truncate message to 90 characters for guaranteed safety
-
-            // Use snprintf instead of strcat for better safety
-            char temp[200]; // Increase buffer size
-            snprintf(temp, sizeof(temp), "%s - Battery: %lu mV, Level: %d%%", 
-                     message, battery_info.voltage_mv, battery_info.level);
-            
-            // Copy back to message with length limitation
-            strncpy(message, temp, sizeof(message) - 1);
-            message[sizeof(message) - 1] = '\0'; // Ensure null terminator
+        // Format initial message with battery information
+        ret = reporter_format_initial_message(message, sizeof(message));
+        if (ret != ESP_OK) {
+            storage_append_log("Failed to format initial message");
         }
         
         // Sending the first message using task
@@ -272,7 +245,7 @@ second_block_init:
             vTaskDelay(pdMS_TO_TICKS(500));
 
             // Discord API initialization for data sending
-            ret = discord_init(&discord_cfg);
+            ret = discord_init();
             if (ret != ESP_OK) {
                 storage_append_log("Discord init failed for data sending");
                 unsuccessful_init();
@@ -339,7 +312,7 @@ third_block_init:
         vTaskDelay(pdMS_TO_TICKS(500));
         
         // Discord API initialization for logs sending
-        ret = discord_init(&discord_cfg);
+        ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord API init failed for logs");
             gsm_modem_deinit();

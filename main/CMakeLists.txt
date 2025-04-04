@@ -10,4 +10,5 @@ idf_component_register(
     discord_api 
     time_manager 
     battery_monitor
+    reporter
 )

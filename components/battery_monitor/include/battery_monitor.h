@@ -7,25 +7,25 @@ extern "C" {
 #endif
 
 /**
- * @brief Информация о батарее
+ * @brief Battery information structure
  */
 typedef struct {
-    uint32_t voltage_mv;    // Напряжение в милливольтах
-    int level;              // Уровень заряда в процентах (0-100%)
+    uint32_t voltage_mv;    // Voltage in millivolts
+    int level;              // Battery level in percentage (0-100%)
 } battery_info_t;
 
 /**
- * @brief Инициализация модуля мониторинга батареи
+ * @brief Initialize battery monitoring module
  * 
- * @return esp_err_t ESP_OK при успехе
+ * @return esp_err_t ESP_OK on success
  */
 esp_err_t battery_monitor_init(void);
 
 /**
- * @brief Чтение текущего состояния батареи
+ * @brief Read current battery status
  * 
- * @param info Указатель на структуру для сохранения информации
- * @return esp_err_t ESP_OK при успехе
+ * @param info Pointer to structure to store battery information
+ * @return esp_err_t ESP_OK on success
  */
 esp_err_t battery_monitor_read(battery_info_t *info);
 

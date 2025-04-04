@@ -17,7 +17,7 @@ static struct {
     const char* channel_id{nullptr};
 } s_config;
 
-static const discord_config_t discord_cfg = {
+static const discord_config_t config = {
     .bot_token = DISCORD_BOT_TOKEN,
     .channel_id = DISCORD_CHANNEL_ID
 };
@@ -53,17 +53,12 @@ static esp_err_t discord_http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-esp_err_t discord_init(const discord_config_t* config) {
+esp_err_t discord_init(void) {
+    ESP_LOGI(TAG, "Initializing Discord API for channel %s", config.channel_id);
     
-    if (config == NULL || config->bot_token == NULL || config->channel_id == NULL) {
-        ESP_LOGE(TAG, "Invalid configuration");
-        return ESP_ERR_INVALID_ARG;
-    }
+    s_config.bot_token = config.bot_token;
+    s_config.channel_id = config.channel_id;
 
-    s_config.bot_token = config->bot_token;
-    s_config.channel_id = config->channel_id;
-
-    ESP_LOGI(TAG, "Discord API initialized for channel %s", config->channel_id);
     return ESP_OK;
 }
 
