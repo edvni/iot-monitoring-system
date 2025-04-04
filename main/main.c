@@ -4,9 +4,12 @@
 #include "esp_pm.h" 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "soc/rtc_cntl_reg.h"
 #include <time.h>
 #include <sys/time.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "power_management.h"
 #include "system_state.h"
@@ -17,22 +20,20 @@
 #include "discord_config.h"
 #include "esp_timer.h"
 #include "time_manager.h"
+#include "battery_monitor.h"
+#include "reporter.h"
 
 
 static const char *TAG = "main";
 
+
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 #define SEND_DATA_CYCLE 3  // For testing 3
+#define TRIGGER_INTERVAL    60000000 // 1 minute in microseconds
 
 static volatile bool data_received = false;  // Flag for data received
-battery_status_t battery;
-char message[128] = "ESP32 started successfully- The measurements for the next part of the day have started";
-
-// Discord configuration
-static const discord_config_t discord_cfg = {
-    .bot_token = DISCORD_BOT_TOKEN,
-    .channel_id = DISCORD_CHANNEL_ID
-};
+// Safe message initialization
+char message[128];
 
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
@@ -74,7 +75,6 @@ void app_main(void)
 {               
     // Save start time and trigger time
     int64_t start_time = esp_timer_get_time();
-    storage_set_last_trigger_time(start_time);
     vTaskDelay(pdMS_TO_TICKS(100)); // Give time for NVS to save
 
     // Variables
@@ -85,10 +85,14 @@ void app_main(void)
     bool first_boot = false;
     //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
     
-    
     // Power management initialization
     ESP_ERROR_CHECK(power_management_init());
     
+    // Initialize battery monitor
+    ESP_ERROR_CHECK(battery_monitor_init());
+    
+    // Time manager initialization
+    time_manager_set_finland_timezone();
     
     // Storage initialization
     ESP_ERROR_CHECK(storage_init());
@@ -137,7 +141,6 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(500));
 
 first_block_init:
-
         // Modem initialization for the first message
         ret = gsm_modem_init();
         if (ret != ESP_OK) {
@@ -150,7 +153,6 @@ first_block_init:
             time_t network_time = gsm_get_network_time();
             if (network_time > 0) {
                 time_manager_set_from_timestamp(network_time); // Synchronize time
-                storage_append_log("Time synchronized with NTP");
             } else {
                 storage_append_log("Failed to synchronize time with NTP");
             }
@@ -161,17 +163,23 @@ first_block_init:
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Discord API initialization for the first message
-        ret = discord_init(&discord_cfg);
+        ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord init failed in first boot");
             unsuccessful_init();
         }
-        // Sending the first message
-        ret = discord_send_message(message);
+        
+        // Format initial message with battery information
+        ret = reporter_format_initial_message(message, sizeof(message));
+        if (ret != ESP_OK) {
+            storage_append_log("Failed to format initial message");
+        }
+        
+        // Sending the first message using task
+        ret = discord_send_message_safe(message);
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
-        } 
-
+        }
         storage_append_log("Done");
         
     }
@@ -237,7 +245,7 @@ second_block_init:
             vTaskDelay(pdMS_TO_TICKS(500));
 
             // Discord API initialization for data sending
-            ret = discord_init(&discord_cfg);
+            ret = discord_init();
             if (ret != ESP_OK) {
                 storage_append_log("Discord init failed for data sending");
                 unsuccessful_init();
@@ -248,7 +256,7 @@ second_block_init:
             
             char *measurements = storage_get_measurements();
             if (measurements != NULL) {
-                ret = send_measurements_with_retries(measurements, 3);
+                ret = send_measurements_with_task_retries(measurements, 3);
                 free(measurements);
                 
                 if (ret == ESP_OK) {
@@ -270,8 +278,14 @@ second_block_init:
     // Deinitialization of sensors
     sensors_deinit();
 
-    snprintf(log_buf, sizeof(log_buf), "Final boot count: %lu", storage_get_boot_count());
-    storage_append_log(log_buf);
+    // Safe string formatting with boot count
+    int written = snprintf(log_buf, sizeof(log_buf), "Final boot count: %lu", storage_get_boot_count());
+    if (written < 0 || written >= (int)sizeof(log_buf)) {
+        ESP_LOGE(TAG, "Error formatting boot count log");
+        storage_append_log("Error logging final boot count");
+    } else {
+        storage_append_log(log_buf);
+    }
     
     
     // Sending logs if data was sent
@@ -298,7 +312,7 @@ third_block_init:
         vTaskDelay(pdMS_TO_TICKS(500));
         
         // Discord API initialization for logs sending
-        ret = discord_init(&discord_cfg);
+        ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord API init failed for logs");
             gsm_modem_deinit();
@@ -308,7 +322,7 @@ third_block_init:
     
     // Sending logs if data was sent to Discord
     if (data_from_storage_sent) {
-        send_logs_with_retries(3);
+        send_logs_with_task_retries(3);
     }
 
     // Final deinitialization of GSM modem
@@ -325,20 +339,19 @@ sleep_prepare:
     // Calculate execution time and remaining sleep time
     int64_t current_time = esp_timer_get_time();
     int64_t execution_time = current_time - start_time;
-    int64_t next_trigger = storage_calculate_next_trigger_time();
-    int64_t sleep_time = next_trigger - execution_time;
+    int64_t sleep_time = TRIGGER_INTERVAL - execution_time;
+    if (sleep_time < 0) {
+        sleep_time = 0;
+    }
     
-    ESP_LOGI(TAG, "Trigger interval: %lld microseconds", next_trigger);
-    ESP_LOGI(TAG, "Start time: %lld microseconds", start_time);
-    ESP_LOGI(TAG, "Current time: %lld microseconds", current_time);
-    ESP_LOGI(TAG, "Execution time: %lld microseconds", execution_time);
-    ESP_LOGI(TAG, "Going to sleep for %lld microseconds", sleep_time);
+    ESP_LOGI(TAG, "Trigger interval: %.2f seconds", (float)TRIGGER_INTERVAL / 1000000.0f);
+    ESP_LOGI(TAG, "Execution time: %.2f seconds", (float)execution_time / 1000000.0f);
+    ESP_LOGI(TAG, "Going to sleep for %.2f seconds", (float)sleep_time / 1000000.0f);
     
     
     esp_sleep_enable_timer_wakeup(sleep_time);
     esp_deep_sleep_start();
 }
-
 
 
 //     // /*------------For debuging---------------*/

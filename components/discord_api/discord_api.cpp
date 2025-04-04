@@ -1,5 +1,6 @@
 #include "discord_api.h"
 #include "discord_cert.h"
+#include "discord_config.h"
 #include "storage.h"
 #include "esp_http_client.h"
 #include "lwip/sockets.h"
@@ -15,6 +16,11 @@ static struct {
     const char* bot_token{nullptr};
     const char* channel_id{nullptr};
 } s_config;
+
+static const discord_config_t config = {
+    .bot_token = DISCORD_BOT_TOKEN,
+    .channel_id = DISCORD_CHANNEL_ID
+};
 
 static esp_err_t discord_http_event_handler(esp_http_client_event_t *evt)
 {
@@ -47,16 +53,12 @@ static esp_err_t discord_http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-esp_err_t discord_init(const discord_config_t* config) {
-    if (config == NULL || config->bot_token == NULL || config->channel_id == NULL) {
-        ESP_LOGE(TAG, "Invalid configuration");
-        return ESP_ERR_INVALID_ARG;
-    }
+esp_err_t discord_init(void) {
+    ESP_LOGI(TAG, "Initializing Discord API for channel %s", config.channel_id);
+    
+    s_config.bot_token = config.bot_token;
+    s_config.channel_id = config.channel_id;
 
-    s_config.bot_token = config->bot_token;
-    s_config.channel_id = config->channel_id;
-
-    ESP_LOGI(TAG, "Discord API initialized for channel %s", config->channel_id);
     return ESP_OK;
 }
 
@@ -64,6 +66,25 @@ esp_err_t discord_send_message(const char *message) {
     if (s_config.bot_token == NULL || s_config.channel_id == NULL) {
         ESP_LOGE(TAG, "Discord API not initialized inside discord_send_message");
         return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Check incoming message
+    if (message == NULL) {
+        ESP_LOGE(TAG, "Message is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (strlen(message) == 0) {
+        ESP_LOGE(TAG, "Message is empty");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Note: Discord has a 2000 character limit for messages
+    // For longer messages use send_large_message_in_chunks in discord_tasks.c
+    size_t msg_len = strlen(message);
+    if (msg_len > 2000) {
+        ESP_LOGW(TAG, "Message length (%d) exceeds Discord limit of 2000 characters. It may be truncated.", 
+                 msg_len);
     }
 
     // URL construction for API endpoint
@@ -76,11 +97,27 @@ esp_err_t discord_send_message(const char *message) {
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) {
         ESP_LOGE(TAG, "Failed to create JSON object");
-        return ESP_ERR_NO_MEM;
+        return ESP_FAIL;
     }
 
     cJSON_AddStringToObject(root, "content", message);
+    if (cJSON_GetObjectItem(root, "content") == NULL) {
+        ESP_LOGE(TAG, "Failed to add message to JSON");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
     char *post_data = cJSON_PrintUnformatted(root);
+    size_t post_data_len = 0;
+    
+    if (post_data == NULL) {
+        ESP_LOGE(TAG, "Failed to create JSON string");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
+    post_data_len = strlen(post_data);
+    ESP_LOGI(TAG, "JSON data length: %d", post_data_len);
 
     // HTTP client configuration
     esp_http_client_config_t config = {};
@@ -102,16 +139,49 @@ esp_err_t discord_send_message(const char *message) {
         return ESP_FAIL;
     }
 
-    // Headers setup
-    esp_http_client_set_header(client, "Content-Type", "application/json");
+    // Headers setup - protection from errors when setting headers
+    esp_err_t header_err = ESP_OK;
+    header_err = esp_http_client_set_header(client, "Content-Type", "application/json");
+    if (header_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set Content-Type header: %s", esp_err_to_name(header_err));
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
+    
     char auth_header[128];
     snprintf(auth_header, sizeof(auth_header), "Bot %s", s_config.bot_token);
-    esp_http_client_set_header(client, "Authorization", auth_header);
+    header_err = esp_http_client_set_header(client, "Authorization", auth_header);
+    if (header_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set Authorization header: %s", esp_err_to_name(header_err));
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
 
+    // POST request sending with additional check
+    esp_err_t post_err = esp_http_client_set_post_field(client, post_data, post_data_len);
+    if (post_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set post field: %s", esp_err_to_name(post_err));
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
     
-    // POST request sending
-    esp_http_client_set_post_field(client, post_data, strlen(post_data));
-    esp_err_t err = esp_http_client_perform(client);
+    // Performing the request with exception protection
+    esp_err_t err;
+    try {
+        err = esp_http_client_perform(client);
+    } catch (...) {
+        ESP_LOGE(TAG, "Exception occurred during HTTP request");
+        free(post_data);
+        cJSON_Delete(root);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
 
     if (err == ESP_OK) {
         int status_code = esp_http_client_get_status_code(client);
@@ -135,47 +205,5 @@ esp_err_t discord_send_message(const char *message) {
     return err;
 }
 
-esp_err_t send_measurements_with_retries(const char* measurements, int max_retries) {
-    esp_err_t ret = ESP_FAIL;
-    
-    for (int i = 0; i < max_retries; i++) {
-        // Sending measurements
-        ret = discord_send_message(measurements);
-        if (ret == ESP_OK) {
-            return ESP_OK;
-        }
-        //storage_append_log("Failed to send measurements, retrying");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    
-    //storage_append_log("All measurement send retries failed");
-    return ret;
-}
 
-esp_err_t send_logs_with_retries(int max_retries) {
-    esp_err_t ret = ESP_FAIL;
-    
-    // Logs receiving
-    char* logs = storage_get_logs();
-    if (logs == NULL) {
-        return ESP_OK; 
-    }
-    
-    for (int i = 0; i < max_retries; i++) {
-   
-        ret = discord_send_message(logs);
-        if (ret == ESP_OK) {
-            // Clearing the log file after successful sending
-            unlink("/spiffs/debug_log.txt");
-            free(logs);
-            return ESP_OK;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    
-    //storage_append_log("Failed to send logs");
-    free(logs);
-    return ret;
-}
 

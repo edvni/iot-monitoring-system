@@ -23,6 +23,7 @@ using namespace esp_modem;
 
 // Global variables 
 static std::string accumulated_response;
+static std::string current_command = "";
 static bool response_completed = false;
 static bool modem_initialized = false;
 static bool system_initialized = false;
@@ -112,23 +113,38 @@ static command_result process_line(uint8_t *data, size_t len)
     if (len == 0) return command_result::TIMEOUT;
     
     std::string response((char*)data, len);
-    ESP_LOGI(TAG, "Received: %s", response.c_str());
     
-    accumulated_response += response;
-    
-    // Если обнаружили *ATREADY, продолжаем ждать
-    if (accumulated_response.find("*ATREADY") != std::string::npos) {
+    // Processing the special case for asynchronous messages
+    if (response.find("*ATREADY") != std::string::npos) {
+        ESP_LOGI(TAG, "Modem ready notification received");
+        // Do not add to accumulated_response for the command
         return command_result::TIMEOUT;
     }
     
-    // Проверяем ответ "OK" в текущей строке или накопленном ответе
+    // Processing POWER DOWN separately
+    if (response.find("POWER DOWN") != std::string::npos) {
+        ESP_LOGI(TAG, "Modem power down notification received");
+    }
+    
+    // Log only important messages at the INFO level, the rest at the DEBUG level
+    if (response.find("ERROR") != std::string::npos || 
+        response.find("OK") != std::string::npos ||
+        response.find("POWER DOWN") != std::string::npos) {
+        ESP_LOGI(TAG, "Received: %s", response.c_str());
+    } else {
+        ESP_LOGD(TAG, "Received: %s", response.c_str());
+    }
+    
+    accumulated_response += response;
+    
+    // Check for "OK" in the current line or accumulated response
     if (response.find("OK") != std::string::npos || 
         accumulated_response.find("OK") != std::string::npos) {
         response_completed = true;
         return command_result::OK;
     }
     
-    // Расширенная проверка на различные типы ошибок
+    // Extended check for different types of errors
     static const std::vector<std::string> error_patterns = {
         "ERROR", "+CME ERROR", "+CMS ERROR"
     };
@@ -136,7 +152,7 @@ static command_result process_line(uint8_t *data, size_t len)
     for (const auto& pattern : error_patterns) {
         if (response.find(pattern) != std::string::npos || 
             accumulated_response.find(pattern) != std::string::npos) {
-            // Если в том же ответе есть "OK", то это все-таки успех
+            // If "OK" is in the same response, then it is still a success
             if (response.find("OK") != std::string::npos || 
                 accumulated_response.find("OK") != std::string::npos) {
                 response_completed = true;
@@ -199,26 +215,41 @@ static esp_err_t configure_modem(void)
 // Function template for sending AT command
 static bool send_at_command(std::unique_ptr<Shiny::DCE>& dce, const std::string& command, uint32_t timeout = 10000) 
 {
+    // Add a visual separator before each new command
+    ESP_LOGI(TAG, "--------------------------------------------");
     ESP_LOGI(TAG, "Sending command: %s", command.c_str());
+    
+    // Save the current command for context
+    current_command = command;
+    
     accumulated_response.clear();
     response_completed = false;
     
     for (int retry = 0; retry < 3; retry++) {
         auto result = dce->command(command + "\r\n", process_line, timeout);
         
-        // Небольшая задержка, чтобы дать модему время завершить свой ответ
+        // A small delay to give the modem time to complete its response
         vTaskDelay(pdMS_TO_TICKS(300));
         
-        // Проверяем результат И накопленный ответ
+        // Check the result and the accumulated response
         if (result == command_result::OK || accumulated_response.find("OK") != std::string::npos) {
-            ESP_LOGI(TAG, "Command successful, accumulated response: %s", accumulated_response.c_str());
+            // Reduce logging for successful responses
+            ESP_LOGI(TAG, "Command successful");
+            ESP_LOGD(TAG, "Full response: %s", accumulated_response.c_str());
             return true;
         }
         
-        ESP_LOGW(TAG, "Command failed (attempt %d/3), accumulated response: %s", 
-                 retry + 1, accumulated_response.c_str());
+        // Leave full logging for errors in DEBUG level
+        ESP_LOGW(TAG, "Command failed (attempt %d/3)", retry + 1);
         
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Задержка только перед следующей попыткой
+        // Processing empty responses
+        if (accumulated_response.empty()) {
+            ESP_LOGW(TAG, "Empty response received");
+        } else {
+            ESP_LOGW(TAG, "Response: %s", accumulated_response.c_str());
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Delay only before the next attempt
     }
     
     return false;
@@ -230,10 +261,20 @@ static bool wait_for_modem_ready(std::unique_ptr<Shiny::DCE>& dce)
 {
     int retries = 10;
     bool power_down_detected = false;
+    bool atready_detected = false;
+    
+    ESP_LOGI(TAG, "Waiting for modem to be ready...");
     
     while (retries--) {
         accumulated_response.clear();
         response_completed = false;
+        
+        // To prevent extra steps, check for the *ATREADY notification before sending the command
+        if (atready_detected) {
+            ESP_LOGI(TAG, "ATREADY was detected, proceeding with communication");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            atready_detected = false;
+        }
         
         if (send_at_command(dce, "AT", 1000)) {
             ESP_LOGI(TAG, "Modem responded to AT command");
@@ -255,14 +296,20 @@ static bool wait_for_modem_ready(std::unique_ptr<Shiny::DCE>& dce)
             return true;
         }
         
+        // Check for the asynchronous ATREADY message separately from the main command stream
+        // This may occur during initialization
         if (accumulated_response.find("*ATREADY") != std::string::npos) {
-            ESP_LOGI(TAG, "Modem indicated ready state");
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            ESP_LOGI(TAG, "Modem ATREADY notification detected");
+            atready_detected = true;
+            vTaskDelay(pdMS_TO_TICKS(2000)); // Give more time after ATREADY
             continue;
         }
         
+        ESP_LOGD(TAG, "Waiting for modem, retry %d remaining", retries);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+    
+    ESP_LOGE(TAG, "Modem not responding after multiple retries");
     return false;
 }
 
@@ -272,7 +319,6 @@ static bool start_checking(std::unique_ptr<Shiny::DCE>& dce)
 {
     if (!wait_for_modem_ready(dce)) {
         ESP_LOGE(TAG, "Modem not responding");
-
         return false;
     }
 
@@ -281,28 +327,59 @@ static bool start_checking(std::unique_ptr<Shiny::DCE>& dce)
         {"AT+CSQ", "Check signal quality"}
     };
 
+    ESP_LOGI(TAG, "Starting modem initialization sequence");
+    
     for (const auto& cmd : init_sequence) {
-        ESP_LOGI(TAG, "--- %s ---", cmd.second.c_str());
-        if (!send_at_command(dce, cmd.first)) {
-            ESP_LOGE(TAG, "Failed: %s", cmd.second.c_str());
-            return false;
-        }
-
+        ESP_LOGI(TAG, "Executing: %s", cmd.second.c_str());
+        
+        // Special processing for checking the SIM card
         if (cmd.first == "AT+CPIN?") {
-            if (accumulated_response.find("READY") != std::string::npos) {
-                ESP_LOGI(TAG, "SIM is ready");
-            } else if (accumulated_response.find("SIM PIN") != std::string::npos) {
-                ESP_LOGI(TAG, "SIM requires PIN, entering PIN code");
-                if (!send_at_command(dce, "AT+CPIN=" MODEM_SIM_PIN, 10000)) {
-                    ESP_LOGE(TAG, "Failed to enter PIN code");
-                    return false;
+            // Try to request status with a higher timeout for reliability
+            bool sim_status_ok = false;
+            
+            // Give up to 3 attempts to check the SIM status
+            for (int sim_retry = 0; sim_retry < 3 && !sim_status_ok; sim_retry++) {
+                if (send_at_command(dce, cmd.first, 5000)) {
+                    sim_status_ok = true;
+                    
+                    if (accumulated_response.find("READY") != std::string::npos) {
+                        ESP_LOGI(TAG, "SIM card is ready");
+                    } else if (accumulated_response.find("SIM PIN") != std::string::npos) {
+                        ESP_LOGI(TAG, "SIM requires PIN, entering PIN code");
+                        if (!send_at_command(dce, "AT+CPIN=" MODEM_SIM_PIN, 10000)) {
+                            ESP_LOGE(TAG, "Failed to enter PIN code");
+                            return false;
+                        } else {
+                            ESP_LOGI(TAG, "PIN entered successfully");
+                            vTaskDelay(pdMS_TO_TICKS(3000)); // Give time for SIM readiness
+                        }
+                    } else if (accumulated_response.find("SIM failure") != std::string::npos) {
+                        ESP_LOGW(TAG, "SIM failure detected, waiting for SIM to initialize");
+                        vTaskDelay(pdMS_TO_TICKS(5000));
+                        sim_status_ok = false;
+                    }
+                } else {
+                    ESP_LOGW(TAG, "SIM status check attempt %d failed, retrying...", sim_retry + 1);
+                    vTaskDelay(pdMS_TO_TICKS(3000));
                 }
+            }
+            
+            if (!sim_status_ok) {
+                ESP_LOGE(TAG, "Failed to get valid SIM status after multiple attempts");
+                return false;
+            }
+        } else {
+            // Standard processing for other commands
+            if (!send_at_command(dce, cmd.first)) {
+                ESP_LOGE(TAG, "Failed: %s", cmd.second.c_str());
+                return false;
             }
         }
         
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
     
+    ESP_LOGI(TAG, "Modem initialization sequence completed successfully");
     return true;
 }
 

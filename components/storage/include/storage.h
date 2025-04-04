@@ -132,31 +132,6 @@ esp_err_t storage_set_system_state(system_state_t state);
 system_state_t storage_get_system_state(void);
 
 
-/**
- * @brief Get the last trigger time
- *
- * @return int64_t Last trigger time in microseconds
- */
-int64_t storage_get_last_trigger_time(void);
-
-
-/**
- * @brief Set the last trigger time
- *
- * @param time Time in microseconds
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_set_last_trigger_time(int64_t time);
-
-
-/**
- * @brief Calculate time until next trigger
- *
- * @return int64_t Time in microseconds until next trigger
- */
-int64_t storage_calculate_next_trigger_time(void);
-
-
 #ifdef __cplusplus
 }
 #endif
