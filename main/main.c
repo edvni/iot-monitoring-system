@@ -22,6 +22,7 @@
 #include "time_manager.h"
 #include "battery_monitor.h"
 #include "reporter.h"
+#include "firebase_api.h"
 
 
 static const char *TAG = "main";
@@ -162,26 +163,41 @@ first_block_init:
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
 
+        // Firebase API initialization
+        ESP_LOGI("FIREBASE TEST", "Testing Firebase connection with MOCK DATA");
+
+        // send 5 mock samples for a test tag
+        esp_err_t result = firebase_start_mock_data_task("TEST_TAG_001", 5);
+
+        if (result == ESP_OK) {
+            ESP_LOGI("FIREBASE TEST", "Mock data task started successfully");
+        } else {
+            ESP_LOGE("FIREBASE TEST", "Failed to start mock data task");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(20000)); // Wait for 20 seconds to allow task to finish
+
+        /*
         // Discord API initialization for the first message
         ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord init failed in first boot");
             unsuccessful_init();
-        }
+        }*/
         
         // Format initial message with battery information
         ret = reporter_format_initial_message(message, sizeof(message));
         if (ret != ESP_OK) {
             storage_append_log("Failed to format initial message");
         }
-        
+        /*
         // Sending the first message using task
         ret = discord_send_message_safe(message);
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
         }
         storage_append_log("Done");
-        
+        */
     }
     
 // --- BLOCK 2: Data collection (for all cycles) ---
@@ -244,12 +260,13 @@ second_block_init:
             storage_set_system_state(STATE_NORMAL);
             vTaskDelay(pdMS_TO_TICKS(500));
 
+            /*
             // Discord API initialization for data sending
             ret = discord_init();
             if (ret != ESP_OK) {
                 storage_append_log("Discord init failed for data sending");
                 unsuccessful_init();
-            }
+            } */
         }
         // Getting measurements from storage and sending them
         if (network_initialized) {
@@ -311,19 +328,21 @@ third_block_init:
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
         
+        /*
         // Discord API initialization for logs sending
         ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord API init failed for logs");
             gsm_modem_deinit();
             goto sleep_prepare;
-        }
+        } */
     }
     
+    /*
     // Sending logs if data was sent to Discord
     if (data_from_storage_sent) {
         send_logs_with_task_retries(3);
-    }
+    } */
 
     // Final deinitialization of GSM modem
     if (first_boot && network_initialized) {

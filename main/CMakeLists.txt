@@ -11,4 +11,5 @@ idf_component_register(
     time_manager 
     battery_monitor
     reporter
+    firebase_api
 )

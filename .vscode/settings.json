@@ -100,6 +100,6 @@
         "sntp.h": "c",
         "time_manager.h": "c"
     },
-    "idf.pythonInstallPath": "C:\\Users\\vdis0\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+    "idf.pythonInstallPath": "${env:IDF_PYTHON_PATH}",
     "idf.portWin": "COM3"
 }
