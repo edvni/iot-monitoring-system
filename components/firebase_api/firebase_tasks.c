@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>  // For unlink function
+#include <time.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -27,7 +28,7 @@ typedef struct {
 static void firebase_send_task(void *pvParameters) {
     firebase_task_data_t *task_data = (firebase_task_data_t *)pvParameters;
     
-    ESP_LOGI(TAG, "Firebase send task started, JSON data length: %d", task_data->json_data);
+    ESP_LOGI(TAG, "Firebase send task started, JSON data length: %zu", strlen(task_data->json_data));
     
     // Document ID could be NULL or empty for auto-generated ID
     const char *doc_id = NULL;
@@ -184,7 +185,7 @@ esp_err_t firebase_send_batch_data_with_retries(const char *collection, const ch
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_LOGI(TAG, "Sending batch data to collection '%s', data length: %d bytes", collection, strlen(batch_json));
+    ESP_LOGI(TAG, "Sending batch data to collection '%s', data length: %zu bytes", collection, strlen(batch_json));
 
     for (int i = 0; i < max_retries; i++) {
         // Using firebase_send_data_safe to handle large JSON payloads safely

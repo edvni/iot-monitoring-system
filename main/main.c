@@ -36,6 +36,8 @@ static volatile bool data_received = false;  // Flag for data received
 // Safe message initialization
 char message[128];
 
+static bool firebase_initialized = false;
+
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
     static bool data_saved = false;  // Status flag for tracking saved data
@@ -69,6 +71,26 @@ static void unsuccessful_init() {
     modem_power_off();
     vTaskDelay(pdMS_TO_TICKS(10000)); // Restart in 10 seconds
     esp_restart();
+}
+
+static esp_err_t initialize_firebase(void) {
+    if (firebase_initialized) {
+        ESP_LOGI(TAG, "Firebase already initialized, skipping initialization");
+        return ESP_OK; // Firebase already initialized
+    }
+
+    ESP_LOGI(TAG, "Initializing Firebase API...");
+    esp_err_t fb_init_ret = firebase_init();
+    if (fb_init_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize Firebase API");
+        storage_append_log("Failed to initialize Firebase API");
+        return fb_init_ret;
+    } else {
+        ESP_LOGI(TAG, "Firebase API initialized successfully");
+        storage_append_log("Firebase API initialized successfully");
+        firebase_initialized = true; // Mark Firebase as initialized
+        return ESP_OK;
+    }
 }
 
 // Main function
@@ -162,20 +184,6 @@ first_block_init:
         // Setting the normal state
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
-
-        // Firebase API initialization
-        ESP_LOGI("FIREBASE TEST", "Testing Firebase connection with MOCK DATA");
-
-        // send 5 mock samples for a test tag
-        esp_err_t result = firebase_start_mock_data_task("TEST_TAG_001", 5);
-
-        if (result == ESP_OK) {
-            ESP_LOGI("FIREBASE TEST", "Mock data task started successfully");
-        } else {
-            ESP_LOGE("FIREBASE TEST", "Failed to start mock data task");
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(20000)); // Wait for 20 seconds to allow task to finish
 
         /*
         // Discord API initialization for the first message
