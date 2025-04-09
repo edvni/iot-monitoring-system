@@ -157,13 +157,13 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
 esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp_str, int max_retries) {
     esp_err_t ret = ESP_FAIL;
 
-    //time_t timestamp = parse_timestamp(timestamp_str); // Convert time string to Unix time
+    time_t timestamp = parse_timestamp(timestamp_str); // Convert time string to Unix time
 
     // Create JSON data for the sensor reading
     char json_data[256];
     snprintf(json_data, sizeof(json_data), 
-        "{\"tag_id\": \"%s\", \"temperature\": %.2f, \"humidity\": %.2f, \"timestamp\": %s}",
-        tag_id, temperature, humidity, timestamp_str);
+        "{\"tag_id\": \"%s\", \"temperature\": %.2f, \"humidity\": %.2f, \"timestamp\": %ld}",
+        tag_id, temperature, humidity, (long)timestamp);
 
     for (int i = 0; i < max_retries; i++) {
         // Send data to "measurements" collection with auto-generated document ID
