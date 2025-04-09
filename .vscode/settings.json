@@ -98,7 +98,8 @@
         "typeinfo": "cpp",
         "variant": "cpp",
         "sntp.h": "c",
-        "time_manager.h": "c"
+        "time_manager.h": "c",
+        "cjson.h": "c"
     },
     "idf.pythonInstallPath": "${env:IDF_PYTHON_PATH}",
     "idf.portWin": "COM3"

@@ -32,7 +32,7 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
  * @param max_retries Maximum number of retry attempts
  * @return esp_err_t ESP_OK on success, otherwise an error code
  */
-esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, int max_retries);
+esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp, int max_retries);
 
 /**
  * @brief Send batch JSON data with retries

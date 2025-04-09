@@ -24,6 +24,12 @@ typedef struct {
     esp_err_t result;
 } firebase_task_data_t;
 
+time_t parse_timestamp(const char *timestamp_str) {
+    struct tm tm = {0};
+    strptime(timestamp_str, "%Y-%m-%d %H:%M:%S", &tm);
+    return mktime(&tm);
+}
+
 // Task for sendind Firebase data with a larger stack
 static void firebase_send_task(void *pvParameters) {
     firebase_task_data_t *task_data = (firebase_task_data_t *)pvParameters;
@@ -148,17 +154,16 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
 }
 
 // Function to send sensor data with retries using a separate task
-esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, int max_retries) {
+esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp_str, int max_retries) {
     esp_err_t ret = ESP_FAIL;
+
+    //time_t timestamp = parse_timestamp(timestamp_str); // Convert time string to Unix time
 
     // Create JSON data for the sensor reading
     char json_data[256];
-    time_t now;
-    time(&now);
-
     snprintf(json_data, sizeof(json_data), 
-        "{\"tag_id\": \"%s\", \"temperature\": %.2f, \"humidity\": %.2f, \"timestamp\": %ld}",
-        tag_id, temperature, humidity, (long)now);
+        "{\"tag_id\": \"%s\", \"temperature\": %.2f, \"humidity\": %.2f, \"timestamp\": %s}",
+        tag_id, temperature, humidity, timestamp_str);
 
     for (int i = 0; i < max_retries; i++) {
         // Send data to "measurements" collection with auto-generated document ID
@@ -181,7 +186,7 @@ esp_err_t firebase_send_batch_data_with_retries(const char *collection, const ch
     esp_err_t ret = ESP_FAIL;
 
     if (collection == NULL || batch_json == NULL) {
-        ESP_LOGE(TAG, "Invalid parameters: Collection or batch_json_data is NULL");
+        ESP_LOGE(TAG, "Invalid parameters: Collection or batch_json data is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 

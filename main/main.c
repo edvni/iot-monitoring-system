@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <string.h>
 #include <unistd.h>
+#include "cJSON.h"
 
 #include "power_management.h"
 #include "system_state.h"
@@ -71,26 +72,6 @@ static void unsuccessful_init() {
     modem_power_off();
     vTaskDelay(pdMS_TO_TICKS(10000)); // Restart in 10 seconds
     esp_restart();
-}
-
-static esp_err_t initialize_firebase(void) {
-    if (firebase_initialized) {
-        ESP_LOGI(TAG, "Firebase already initialized, skipping initialization");
-        return ESP_OK; // Firebase already initialized
-    }
-
-    ESP_LOGI(TAG, "Initializing Firebase API...");
-    esp_err_t fb_init_ret = firebase_init();
-    if (fb_init_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize Firebase API");
-        storage_append_log("Failed to initialize Firebase API");
-        return fb_init_ret;
-    } else {
-        ESP_LOGI(TAG, "Firebase API initialized successfully");
-        storage_append_log("Firebase API initialized successfully");
-        firebase_initialized = true; // Mark Firebase as initialized
-        return ESP_OK;
-    }
 }
 
 // Main function
@@ -185,27 +166,25 @@ first_block_init:
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
 
-        /*
         // Discord API initialization for the first message
         ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord init failed in first boot");
             unsuccessful_init();
-        }*/
+        }
         
         // Format initial message with battery information
         ret = reporter_format_initial_message(message, sizeof(message));
         if (ret != ESP_OK) {
             storage_append_log("Failed to format initial message");
         }
-        /*
+        
         // Sending the first message using task
         ret = discord_send_message_safe(message);
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
         }
         storage_append_log("Done");
-        */
     }
     
 // --- BLOCK 2: Data collection (for all cycles) ---
@@ -268,20 +247,55 @@ second_block_init:
             storage_set_system_state(STATE_NORMAL);
             vTaskDelay(pdMS_TO_TICKS(500));
 
-            /*
             // Discord API initialization for data sending
             ret = discord_init();
             if (ret != ESP_OK) {
                 storage_append_log("Discord init failed for data sending");
                 unsuccessful_init();
-            } */
+            }
+
+            // Firebase API initialization for data sending
+            ret = firebase_init();
+            if (ret != ESP_OK) {
+                storage_append_log("Firebase init failed for data sending");
+                unsuccessful_init();
+            }
         }
         // Getting measurements from storage and sending them
         if (network_initialized) {
             
             char *measurements = storage_get_measurements();
+            ESP_LOGI(TAG, "Stored data: %s", measurements);
             if (measurements != NULL) {
-                ret = send_measurements_with_task_retries(measurements, 3);
+                ret = send_measurements_with_task_retries(measurements, 3); // Send discord
+
+                cJSON *measurements_array = cJSON_Parse(measurements);
+                if (measurements_array == NULL) {
+                    ESP_LOGE(TAG, "JSON parse error: %s", cJSON_GetErrorPtr());
+                    free(measurements);
+                    return;
+                }
+
+                cJSON *measurement;
+                cJSON_ArrayForEach(measurement, measurements_array) {
+                    cJSON *time_json = cJSON_GetObjectItem(measurement, "time");
+                    cJSON *temp_json = cJSON_GetObjectItem(measurement, "t");
+                    cJSON *hum_json = cJSON_GetObjectItem(measurement, "h");
+
+                    const char *timestamp = time_json->valuestring; // Format: 2025-04-09 16:12:12
+                    float temperature = atof(temp_json->valuestring);
+                    float humidity = atof(hum_json->valuestring);
+
+                    const char *tag_id = "C4:D9:12:ED:63:C6"; // Example MAC address
+                    // Send to firebase
+                    ret = firebase_send_sensor_data_with_retries(tag_id, temperature, humidity, timestamp, 3);
+                    if (ret != ESP_OK) {
+                        ESP_LOGE(TAG, "Failed to send data to Firebase: %s", esp_err_to_name(ret));
+                    } else {
+                        ESP_LOGI(TAG, "Data sent to Firebase successfully");
+                    }
+                }
+                cJSON_Delete(measurements_array); // Free the JSON object
                 free(measurements);
                 
                 if (ret == ESP_OK) {
@@ -336,14 +350,13 @@ third_block_init:
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
         
-        /*
         // Discord API initialization for logs sending
         ret = discord_init();
         if (ret != ESP_OK) {
             storage_append_log("Discord API init failed for logs");
             gsm_modem_deinit();
             goto sleep_prepare;
-        } */
+        }
     }
     
     /*

@@ -197,7 +197,7 @@ esp_err_t firebase_send_data(const char *collection, const char *document_id, co
     if (document_id != NULL && strlen(document_id) > 0) {
         // Update/create specific document
         snprintf(url, sizeof(url), "%s/%s/%s", FIREBASE_URL, collection, document_id);
-        ESP_LOGI(TAG, "FIRSTORE_URL: %s", FIREBASE_URL);
+        ESP_LOGI(TAG, "FIRESTORE_URL: %s", FIREBASE_URL);
         ESP_LOGI(TAG, "Collection: %s", collection);
         ESP_LOGI(TAG, "Document ID: %s", document_id ? document_id : "NULL");
     } else {
@@ -277,19 +277,6 @@ esp_err_t firebase_send_data(const char *collection, const char *document_id, co
     esp_http_client_cleanup(client);
     free(firestore_data);
     return err;
-}
-
-// Implementation of the function declared in firebase_api.h
-// TODO: Make it work with our Project
-esp_err_t firebase_send_ruuvitag_data(const char *tag_id, float temperature, float humidity) {
-    // Create JSON with ssensor data
-    char json_data[256];
-    snprintf(json_data, sizeof(json_data), 
-        "{\"tag_id\": \"%s\", \"temperature\": %.2f, \"humidity\": %.2f, \"timestamp\": %ld}",
-        tag_id, temperature, humidity, (long)time(NULL));
-
-    // Send to Firebase under "measurements" colelction with auto-generated document ID
-    return firebase_send_data("measurements", NULL, json_data);
 }
 
 /**
