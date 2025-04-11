@@ -34,30 +34,6 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
  */
 esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp, int max_retries);
 
-/**
- * @brief Send batch JSON data with retries
- * 
- * @param collection The Firestore collection name
- * @param batch_json The JSON data to send
- * @param max_retries Maximum number of retry attempts
- * @return esp_err_t ESP_OK on success, otherwise an error code
- */
-esp_err_t firebase_send_batch_data_with_retries(const char *collection, const char *batch_json, int max_retries);
-
-/**
- * @brief Send multiple sensor readings in a single document
- * 
- * @param tag_id The sensor tag ID
- * @param temperatures Array of temperature readings
- * @param humidities Array of humidity readings
- * @param timestamps Array of timestamp values
- * @param count Number of readings in the arrays
- * @param max_retries Maximum number of retry attempts
- * @return esp_err_t ESP_OK on success, otherwise an error code
- */
-esp_err_t firebase_send_multiple_readings(const char *tag_id, const float *temperatures, const float *humidities, 
-                                         const time_t *timestamps, int count, int max_retries);
-
 #ifdef __cplusplus
 }
 #endif

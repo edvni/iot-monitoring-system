@@ -24,24 +24,6 @@ esp_err_t firebase_init(void);
 esp_err_t firebase_send_data(const char *collection, const char *document_id, const char *json_data);
 
 /**
- * @brief Send mock sensor data to Firestore for testing connection
- * 
- * @param tag_id A mock identifier for the sensor
- * @param num_samples Number of mock readings to send
- * @return esp_err_t ESP_OK if all data was sent successfully, otherwise ESP_FAIL
- */
-esp_err_t firebase_send_mock_data(const char *tag_id, int num_samples);
-
-/**
- * @brief Start a task to send mock data to Firebase
- * 
- * @param tag_id A mock identifier for the sensor
- * @param num_samples Number of mock readings to send
- * @return esp_err_t ESP_OK if task started successfully, ESP_FAIL otherwise
- */
-esp_err_t firebase_start_mock_data_task(const char *tag_id, int num_samples);
-
-/**
  * @brief Send Firebase data safely using a separate task with a large stack
  * 
  * @param collection The Firestore collection name
