@@ -26,7 +26,7 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
 /**
  * @brief Send sensor data with retries using a separate task
  * 
- * @param tag_id The sensor tag ID
+ * @param tag_id The sensor tag ID / MAC address
  * @param temperature The temperature reading
  * @param humidity The humidity reading
  * @param max_retries Maximum number of retry attempts

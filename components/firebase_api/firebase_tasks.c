@@ -30,7 +30,7 @@ time_t parse_timestamp(const char *timestamp_str) {
     return mktime(&tm);
 }
 
-// Task for sendind Firebase data with a larger stack
+// Task for sending Firebase data with a larger stack
 static void firebase_send_task(void *pvParameters) {
     firebase_task_data_t *task_data = (firebase_task_data_t *)pvParameters;
     

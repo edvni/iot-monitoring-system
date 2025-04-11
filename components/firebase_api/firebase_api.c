@@ -26,7 +26,7 @@ static const char *TAG = "firebase_api";
 static char jwt_token[2048] = {0};
 static int64_t token_expiration_time = 0;
 
-// Function prototypes
+// Function prototypes to allow to be called before their definitions, static for internal use only
 static esp_err_t create_jwt_token(void);
 static bool is_token_valid(void);
 static esp_err_t firebase_http_event_handler(esp_http_client_event_t *evt);

@@ -1,3 +1,8 @@
+/**
+ * @file firebase_api.h
+ * @brief Header for Firebase API functions
+ */
+
 #ifndef FIREBASE_API_H
 #define FIREBASE_API_H
 

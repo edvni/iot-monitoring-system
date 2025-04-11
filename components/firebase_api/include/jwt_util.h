@@ -1,3 +1,8 @@
+/**
+ * @file jwt_util.h
+ * @brief Header for JWT (JSON Web Token) generation utility functions
+ */
+
 #ifndef jwt_util_h
 #define jwt_util_h
 
