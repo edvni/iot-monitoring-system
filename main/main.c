@@ -266,34 +266,7 @@ second_block_init:
             ESP_LOGI(TAG, "Stored data: %s", measurements);
             if (measurements != NULL) {
                 ret = send_measurements_with_task_retries(measurements, 3); // Send discord
-
-                cJSON *measurements_array = cJSON_Parse(measurements);
-                if (measurements_array == NULL) {
-                    ESP_LOGE(TAG, "JSON parse error: %s", cJSON_GetErrorPtr());
-                    free(measurements);
-                    return;
-                }
-
-                cJSON *measurement;
-                cJSON_ArrayForEach(measurement, measurements_array) {
-                    cJSON *time_json = cJSON_GetObjectItem(measurement, "time");
-                    cJSON *temp_json = cJSON_GetObjectItem(measurement, "t");
-                    cJSON *hum_json = cJSON_GetObjectItem(measurement, "h");
-
-                    const char *timestamp = time_json->valuestring; // Format: 2025-04-09 16:12:12
-                    float temperature = atof(temp_json->valuestring);
-                    float humidity = atof(hum_json->valuestring);
-
-                    const char *tag_id = "C4:D9:12:ED:63:C6"; // Example MAC address
-                    // Send to firebase
-                    ret = firebase_send_sensor_data_with_retries(tag_id, temperature, humidity, timestamp, 3);
-                    if (ret != ESP_OK) {
-                        ESP_LOGE(TAG, "Failed to send data to Firebase: %s", esp_err_to_name(ret));
-                    } else {
-                        ESP_LOGI(TAG, "Data sent to Firebase successfully");
-                    }
-                }
-                cJSON_Delete(measurements_array); // Free the JSON object
+                ret = send_final_measurements_to_firebase(measurements); // Send firebase
                 free(measurements);
                 
                 if (ret == ESP_OK) {

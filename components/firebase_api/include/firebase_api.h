@@ -49,5 +49,12 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
  */
 esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp, int max_retries);
 
+/**
+ * @brief Send final measurements to Firebase
+ * 
+ * @param measurements The measurements to send
+ * @return esp_err_t ESP_OK on success, otherwise an error code
+ */
+esp_err_t send_final_measurements_to_firebase(const char *measurements);
 
 #endif /* FIREBASE_API_H */
