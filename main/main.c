@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <string.h>
 #include <unistd.h>
+#include "cJSON.h"
 
 #include "power_management.h"
 #include "system_state.h"
@@ -22,6 +23,7 @@
 #include "time_manager.h"
 #include "battery_monitor.h"
 #include "reporter.h"
+#include "firebase_api.h"
 
 
 static const char *TAG = "main";
@@ -181,7 +183,6 @@ first_block_init:
             storage_append_log("Failed to send first boot message");
         }
         storage_append_log("Done");
-        
     }
     
 // --- BLOCK 2: Data collection (for all cycles) ---
@@ -250,13 +251,22 @@ second_block_init:
                 storage_append_log("Discord init failed for data sending");
                 unsuccessful_init();
             }
+
+            // Firebase API initialization for data sending
+            ret = firebase_init();
+            if (ret != ESP_OK) {
+                storage_append_log("Firebase init failed for data sending");
+                unsuccessful_init();
+            }
         }
         // Getting measurements from storage and sending them
         if (network_initialized) {
             
             char *measurements = storage_get_measurements();
+            ESP_LOGI(TAG, "Stored data: %s", measurements);
             if (measurements != NULL) {
-                ret = send_measurements_with_task_retries(measurements, 3);
+                ret = send_measurements_with_task_retries(measurements, 3); // Send discord
+                ret = send_final_measurements_to_firebase(measurements); // Send firebase
                 free(measurements);
                 
                 if (ret == ESP_OK) {
@@ -320,10 +330,11 @@ third_block_init:
         }
     }
     
+    /*
     // Sending logs if data was sent to Discord
     if (data_from_storage_sent) {
         send_logs_with_task_retries(3);
-    }
+    } */
 
     // Final deinitialization of GSM modem
     if (first_boot && network_initialized) {
