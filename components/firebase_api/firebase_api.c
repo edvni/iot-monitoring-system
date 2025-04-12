@@ -155,7 +155,6 @@ static char* format_firestore_data(const char *json_str) {
 // Pulic function implementations
 
 esp_err_t firebase_init(void) {
-    
     // Initialize time (needed for token generation)
     time_t now = 0;
     time(&now);

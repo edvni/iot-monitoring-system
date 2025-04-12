@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "firebase_api.h"
+#include "time_manager.h"
 
 static const char *TAG = "FIREBASE_TASKS";
 
@@ -23,12 +24,6 @@ typedef struct {
     SemaphoreHandle_t done_semaphore;
     esp_err_t result;
 } firebase_task_data_t;
-
-time_t parse_timestamp(const char *timestamp_str) {
-    struct tm tm = {0};
-    strptime(timestamp_str, "%Y-%m-%d %H:%M:%S", &tm);
-    return mktime(&tm);
-}
 
 // Task for sending Firebase data with a larger stack
 static void firebase_send_task(void *pvParameters) {
@@ -157,7 +152,11 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
 esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp_str, int max_retries) {
     esp_err_t ret = ESP_FAIL;
 
-    time_t timestamp = parse_timestamp(timestamp_str); // Convert time string to Unix time
+    time_t timestamp = parse_timestamp_for_firebase(timestamp_str); // Convert time string to Unix time
+    if (timestamp == (time_t)-1) {
+        ESP_LOGE(TAG, "Failed to parse timestamp string: %s", timestamp_str);
+        return ESP_FAIL;
+    }
 
     // Create JSON data for the sensor reading
     char json_data[256];

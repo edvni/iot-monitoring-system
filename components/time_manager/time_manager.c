@@ -6,6 +6,10 @@
 
 static const char *TAG = "TIME_MANAGER";
 
+// Set Finland timezone (UTC+2 standard, UTC+3 DST)
+#define TIMEZONE_OFFSET_STANDARD 7200  // UTC+2 in seconds
+#define TIMEZONE_OFFSET_DST      10800 // UTC+3 in seconds
+
 esp_err_t time_manager_set_finland_timezone(void) {
     ESP_LOGI(TAG, "Setting timezone to EET (UTC+2) with DST (UTC+3)");
     setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1); // EET (UTC+2) with DST (UTC+3)
@@ -61,3 +65,34 @@ esp_err_t time_manager_set_from_timestamp(time_t timestamp) {
     return ESP_OK;
 }
 
+time_t parse_timestamp_for_firebase(const char *timestamp_str) {
+    struct tm tm = {0};
+    if (strptime(timestamp_str, "%Y-%m-%d %H:%M:%S", &tm) == NULL) {
+        ESP_LOGE(TAG, "Failed to parse timestamp string: %s", timestamp_str);
+        return (time_t)-1;
+    }
+
+    // Manually adjust for Finland timezone (DST handled below)
+    tm.tm_isdst = -1; // Let mktime determine if DST is in effect
+    time_t local_time = mktime(&tm);
+
+    // Convert local time to UTC
+    struct tm *utc_tm = gmtime(&local_time);
+    time_t utc_time = mktime(utc_tm);
+
+    // Apply timezone offset (reverse of mktime's local-to-UTC conversion)
+    time_t final_time = local_time + (local_time - utc_time);
+
+    // Finland DST runs from last sunday March to last Sunday October
+    time_t march_last_sunday = mktime(&tm) + (TIMEZONE_OFFSET_DST - TIMEZONE_OFFSET_STANDARD);
+    time_t october_last_sunday = mktime(&tm) - (TIMEZONE_OFFSET_DST - TIMEZONE_OFFSET_STANDARD);
+
+    if (final_time >= march_last_sunday && final_time < october_last_sunday) {
+        final_time -= TIMEZONE_OFFSET_DST; // Apply DST offset
+    } else {
+        final_time -= TIMEZONE_OFFSET_STANDARD; // Apply standard offset
+    }
+
+    return final_time;
+}
+    

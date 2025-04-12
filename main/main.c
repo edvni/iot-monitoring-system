@@ -37,8 +37,6 @@ static volatile bool data_received = false;  // Flag for data received
 // Safe message initialization
 char message[128];
 
-static bool firebase_initialized = false;
-
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
     static bool data_saved = false;  // Status flag for tracking saved data
