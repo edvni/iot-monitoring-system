@@ -27,10 +27,13 @@ cJSON* json_helper_create_measurement_object(ruuvi_measurement_t *measurement) {
     // Existing fields
     char temp_str[10];
     char hum_str[10];
+    char mac_str[18];
     snprintf(temp_str, sizeof(temp_str), "%.f", measurement->temperature);
     snprintf(hum_str, sizeof(hum_str), "%.f", measurement->humidity);
+    snprintf(mac_str, sizeof(mac_str), "%s", measurement->mac_address);
     cJSON_AddStringToObject(measurement_obj, "t", temp_str);
     cJSON_AddStringToObject(measurement_obj, "h", hum_str);
+    cJSON_AddStringToObject(measurement_obj, "mac", mac_str);
 
     //cJSON_AddStringToObject(measurement_obj, "mac", measurement->mac_address);
     //cJSON_AddNumberToObject(measurement_obj, "temperature", measurement->temperature);

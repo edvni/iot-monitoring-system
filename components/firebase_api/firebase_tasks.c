@@ -198,8 +198,9 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
         cJSON *time_json = cJSON_GetObjectItem(measurement, "time");
         cJSON *temp_json = cJSON_GetObjectItem(measurement, "t");
         cJSON *hum_json = cJSON_GetObjectItem(measurement, "h");
+        cJSON *mac_json = cJSON_GetObjectItem(measurement, "mac");
 
-        if (!time_json || !temp_json || !hum_json) {
+        if (!time_json || !temp_json || !hum_json || !mac_json) {
             ESP_LOGE(TAG, "Missing required measurements fields");
             overall_status = ESP_FAIL;
             continue;
@@ -208,7 +209,7 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
         const char *timestamp = time_json->valuestring; // Format: 2025-04-09 16:12:12
         float temperature = atof(temp_json->valuestring);
         float humidity = atof(hum_json->valuestring);
-        const char *tag_id = "C4:D9:12:ED:63:C6"; // Example MAC address (could make configurable)
+        const char *tag_id = mac_json->valuestring; // MAC address
 
         esp_err_t ret = firebase_send_sensor_data_with_retries(tag_id, temperature, humidity, timestamp, 3);
         if (ret != ESP_OK) {
