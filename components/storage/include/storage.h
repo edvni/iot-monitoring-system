@@ -1,7 +1,7 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
-#define LOGGING true
+#define LOGGING false
 
 #include "esp_err.h"
 #include <stdbool.h>
@@ -153,4 +153,4 @@ esp_err_t storage_mark_first_boot_completed(void);
 }
 #endif
 
-#endif /* STORAGE_H */
+#endif 

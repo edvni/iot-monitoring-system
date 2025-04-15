@@ -140,9 +140,11 @@ void app_main(void)
             storage_append_log("Entering second block recovery mode");
             goto second_block_init;
             
+        #if LOGGING
         case STATE_THIRD_BLOCK_RECOVERY:
             storage_append_log("Entering third block recovery mode");
             goto third_block_init;
+        #endif
             
         case STATE_NORMAL:
         default:
@@ -307,6 +309,7 @@ second_block_init:
     
     
     // Sending logs if data was sent
+    #if LOGGING
     if (data_from_storage_sent && !network_initialized) {
         storage_append_log("Sending logs");
 
@@ -345,6 +348,7 @@ third_block_init:
             goto sleep_prepare;
         }
     }
+    #endif
     
 
     // Final deinitialization of GSM modem
