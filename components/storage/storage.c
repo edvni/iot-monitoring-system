@@ -1,4 +1,5 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
+//#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #include "storage.h"
 #include "system_state.h"
 #include "nvs_flash.h"
@@ -18,6 +19,7 @@
 #define WDT_TIMEOUT_SHORT   5000     // 5 seconds for normal operation
 #define BOOT_COUNT_KEY "boot_count"
 #define ERROR_FLAG_KEY "error_flag"
+#define FIRST_BOOT_KEY "first_boot"
 #define GSM_FIRST_BLOCK_KEY "gsm_first_block"
 #define GSM_SECOND_BLOCK_KEY "gsm_second_block"
 #define GSM_THIRD_BLOCK_KEY "gsm_third_block"
@@ -234,6 +236,7 @@ esp_err_t storage_clear_measurements(void) {
 
 // Storaging the logs in SPIFFS
 esp_err_t storage_append_log(const char* log_message) {
+    #if LOGGING
     if (!check_spiffs_status()) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -251,6 +254,7 @@ esp_err_t storage_append_log(const char* log_message) {
     uint32_t boot_count = storage_get_boot_count();
     fprintf(f, "[Boot:%lu][%lld] %s\n", boot_count, (long long)(esp_timer_get_time() / 1000000), log_message);
     fclose(f);
+    #endif
     
     return ESP_OK;
 }
@@ -380,5 +384,16 @@ system_state_t storage_get_system_state(void) {
     uint8_t state = STATE_NORMAL;
     esp_err_t ret = nvs_get_u8(my_nvs_handle, "system_state", &state);
     return (ret == ESP_OK) ? (system_state_t)state : STATE_NORMAL;
+}
+
+bool storage_is_first_boot(void) {
+    uint8_t first_boot = 0;
+    esp_err_t ret = nvs_get_u8(my_nvs_handle, FIRST_BOOT_KEY, &first_boot);
+    return (ret == ESP_ERR_NVS_NOT_FOUND || first_boot == 0);
+}
+
+esp_err_t storage_mark_first_boot_completed(void) {
+    esp_err_t ret = nvs_set_u8(my_nvs_handle, FIRST_BOOT_KEY, 1);
+    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
 }
 

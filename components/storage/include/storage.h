@@ -1,6 +1,8 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
+#define LOGGING true
+
 #include "esp_err.h"
 #include <stdbool.h>
 #include "sensors.h"
@@ -131,6 +133,21 @@ esp_err_t storage_set_system_state(system_state_t state);
  */
 system_state_t storage_get_system_state(void);
 
+
+/**
+ * @brief Check if this is the first boot ever
+ * 
+ * @return bool true if this is the first boot
+ */
+bool storage_is_first_boot(void);
+
+
+/**
+ * @brief Mark that first boot has been completed
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_mark_first_boot_completed(void);
 
 #ifdef __cplusplus
 }

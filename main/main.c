@@ -28,10 +28,10 @@
 
 static const char *TAG = "main";
 
-
+//#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
-#define SEND_DATA_CYCLE 3  // For testing 3
-#define TRIGGER_INTERVAL    60000000 // 1 minute in microseconds
+#define SEND_DATA_CYCLE 144  // For testing 3
+#define TRIGGER_INTERVAL    600000000 // 10 minutes in microseconds
 
 static volatile bool data_received = false;  // Flag for data received
 // Safe message initialization
@@ -44,12 +44,6 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
     if (data_saved) {
         return;
     }
-    
-    // ESP_LOGI(TAG, "RuuviTag data received");
-    // ESP_LOGI(TAG, "  MAC: %s", measurement->mac_address);
-    // ESP_LOGI(TAG, "  Temperature: %.2f °C", measurement->temperature);
-    // ESP_LOGI(TAG, "  Humidity: %.2f %%", measurement->humidity);
-    // ESP_LOGI(TAG, "  Timestamp: %llu", measurement->timestamp);
 
     // Mearurements saiving
     esp_err_t ret = storage_save_measurement(measurement);
@@ -59,6 +53,31 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
         data_saved = true;     // Mark that we saved
         data_received = true;  // Set the flag for the main cycle
     }
+}
+
+static esp_err_t sending_message_to_discord() {
+
+    esp_err_t ret;
+
+    ret = discord_init();
+    if (ret != ESP_OK) {
+        storage_append_log("Discord init failed in first boot");
+        unsuccessful_init();
+    }
+    
+    // Format initial message with battery information
+    ret = reporter_format_initial_message(message, sizeof(message));
+    if (ret != ESP_OK) {
+        storage_append_log("Failed to format initial message");
+    }
+    
+    // Sending the first message using task
+    ret = discord_send_message_safe(message);
+    if (ret != ESP_OK) {
+        storage_append_log("Failed to send first boot message");
+    }
+    
+    return ESP_OK;
 }
 
 // Unsuccessful initialization
@@ -131,9 +150,8 @@ void app_main(void)
             break;
     }
 
-    
     // --- BLOCK 1: Special operations for the first boot ---
-    if (boot_count == 0) {
+    if (storage_is_first_boot()) {
         first_boot = true; 
 
         storage_append_log("First boot operations");
@@ -165,24 +183,14 @@ first_block_init:
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Discord API initialization for the first message
-        ret = discord_init();
-        if (ret != ESP_OK) {
-            storage_append_log("Discord init failed in first boot");
-            unsuccessful_init();
-        }
-        
-        // Format initial message with battery information
-        ret = reporter_format_initial_message(message, sizeof(message));
-        if (ret != ESP_OK) {
-            storage_append_log("Failed to format initial message");
-        }
-        
-        // Sending the first message using task
-        ret = discord_send_message_safe(message);
+        ret = sending_message_to_discord();
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
         }
-        storage_append_log("Done");
+        
+        // Mark first boot as completed
+        storage_mark_first_boot_completed();
+        storage_append_log("First boot completed");
     }
     
 // --- BLOCK 2: Data collection (for all cycles) ---
@@ -239,18 +247,19 @@ second_block_init:
                 unsuccessful_init();
             } else {
                 network_initialized = true;
+
+                // Add time synchronization
+                time_t network_time = gsm_get_network_time();
+                if (network_time > 0) {
+                    time_manager_set_from_timestamp(network_time); // Synchronize time
+                } else {
+                    storage_append_log("Failed to synchronize time with NTP");
+                }
             }
 
             // Setting the normal state
             storage_set_system_state(STATE_NORMAL);
             vTaskDelay(pdMS_TO_TICKS(500));
-
-            // Discord API initialization for data sending
-            ret = discord_init();
-            if (ret != ESP_OK) {
-                storage_append_log("Discord init failed for data sending");
-                unsuccessful_init();
-            }
 
             // Firebase API initialization for data sending
             ret = firebase_init();
@@ -265,7 +274,6 @@ second_block_init:
             char *measurements = storage_get_measurements();
             ESP_LOGI(TAG, "Stored data: %s", measurements);
             if (measurements != NULL) {
-                ret = send_measurements_with_task_retries(measurements, 3); // Send discord
                 ret = send_final_measurements_to_firebase(measurements); // Send firebase
                 free(measurements);
                 
@@ -315,6 +323,14 @@ third_block_init:
             goto sleep_prepare;
         } else {
             network_initialized = true;
+
+            // Add time synchronization
+            time_t network_time = gsm_get_network_time();
+            if (network_time > 0) {
+                time_manager_set_from_timestamp(network_time); // Synchronize time
+            } else {
+                storage_append_log("Failed to synchronize time with NTP");
+            }
         }
 
         // Setting the normal state
@@ -330,11 +346,6 @@ third_block_init:
         }
     }
     
-    /*
-    // Sending logs if data was sent to Discord
-    if (data_from_storage_sent) {
-        send_logs_with_task_retries(3);
-    } */
 
     // Final deinitialization of GSM modem
     if (first_boot && network_initialized) {
@@ -364,15 +375,6 @@ sleep_prepare:
     esp_deep_sleep_start();
 }
 
-
-//     // /*------------For debuging---------------*/
-//     // // Print measurements in debug mode
-//     // char *measurements = storage_get_measurements();
-//     // if (measurements != NULL) {
-//     //     //ESP_LOGI(TAG, "Stored data: %s", measurements);
-//     //     free(measurements);
-//     // }
-//     // /*---------------------------------------*/
 
 
 
