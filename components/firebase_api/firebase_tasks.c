@@ -5,7 +5,6 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>  // For unlink function
 #include <time.h>
 #include "cJSON.h"
 #include "esp_log.h"
@@ -19,18 +18,16 @@ static const char *TAG = "FIREBASE_TASKS";
 
 // Firebase data sending task structure
 typedef struct {
-    char collection[64]; // Firestore collection name
-    char document_id[64]; // Document ID (use NULL for auto-generated ID)
-    char json_data[4096]; // JSON data to send
+    char collection[64];         // Firestore collection name
+    char document_id[64];        // Document ID
+    char json_data[8192];        // JSON data to send
     SemaphoreHandle_t done_semaphore;
     esp_err_t result;
 } firebase_task_data_t;
 
-// Task for sending Firebase data with a larger stack
+// Задача для отправки данных Firebase
 static void firebase_send_task(void *pvParameters) {
     firebase_task_data_t *task_data = (firebase_task_data_t *)pvParameters;
-    
-    ESP_LOGI(TAG, "Firebase send task started, JSON data length: %zu", strlen(task_data->json_data));
     
     // Document ID could be NULL or empty for auto-generated ID
     const char *doc_id = NULL;
@@ -38,7 +35,7 @@ static void firebase_send_task(void *pvParameters) {
         doc_id = task_data->document_id;
     }
     
-    // Send the data
+    // Отправляем данные
     task_data->result = firebase_send_data(task_data->collection, doc_id, task_data->json_data);
     
     // Signal completion
@@ -46,75 +43,58 @@ static void firebase_send_task(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
-// Function to send Firebase data using a separate task
-esp_err_t firebase_send_data_safe(const char *collection, const char *document_id, const char *json_data) {
-    if (collection == NULL || json_data == NULL) {
-        ESP_LOGE(TAG, "Invalid parameters: Collection or json_data is NULL");
+// Функция для безопасной отправки данных в Firebase через отдельную задачу
+static esp_err_t firebase_send_data_safe(const char *collection, const char *document_id, const char *json_data) {
+    if (!collection || !json_data) {
+        ESP_LOGE(TAG, "Invalid parameters");
         return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Check JSON data size
+    size_t json_len = strlen(json_data);
+    if (json_len >= 8192) {
+        ESP_LOGE(TAG, "JSON data too large (%zu bytes), max 8192 bytes", json_len);
+        return ESP_ERR_INVALID_SIZE;
     }
 
     // Allocate memory for task data structure
     firebase_task_data_t *task_data = malloc(sizeof(firebase_task_data_t));
-    if (task_data == NULL) {
+    if (!task_data) {
         ESP_LOGE(TAG, "Failed to allocate memory for task data");
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Creating Firebase send task");
-
     // Create semaphore for synchronization
     task_data->done_semaphore = xSemaphoreCreateBinary();
-    if (task_data->done_semaphore == NULL) {
+    if (!task_data->done_semaphore) {
         ESP_LOGE(TAG, "Failed to create semaphore");
         free(task_data);
         return ESP_ERR_NO_MEM;
     }
 
     // Copy collection name to task data
-    size_t collection_len = strlen(collection);
-    size_t max_collection_copy = sizeof(task_data->collection) - 1;
-
-    if (collection_len > max_collection_copy) {
-        ESP_LOGW(TAG, "Collection name length (%zu) exceeds buffer size (%zu), will be truncated",
-                 collection_len, max_collection_copy);
-    }
-
-    strncpy(task_data->collection, collection, max_collection_copy);
-    task_data->collection[max_collection_copy] = '\0'; // Ensure null terminator
+    strncpy(task_data->collection, collection, sizeof(task_data->collection) - 1);
+    task_data->collection[sizeof(task_data->collection) - 1] = '\0';
 
     // Copy document_id to task data (if provided)
-    if (document_id != NULL) {
-        size_t doc_id_len = strlen(document_id);
-        size_t max_doc_id_copy = sizeof(task_data->document_id) - 1;
-
-        if (doc_id_len > max_doc_id_copy) {
-            ESP_LOGW(TAG, "Document ID length (%zu) exceeds buffer size (%zu), will be truncated",
-                     doc_id_len, max_doc_id_copy);
-        }
-        strncpy(task_data->document_id, document_id, max_doc_id_copy);
-        task_data->document_id[max_doc_id_copy] = '\0'; // Ensure null terminator
+    if (document_id) {
+        strncpy(task_data->document_id, document_id, sizeof(task_data->document_id) - 1);
+        task_data->document_id[sizeof(task_data->document_id) - 1] = '\0';
     } else {
-        task_data->document_id[0] = '\0'; // Set to empty string if NULL
+        task_data->document_id[0] = '\0';
     }
 
     // Copy JSON data to task data
-    size_t json_len = strlen(json_data);
-    size_t max_json_copy = sizeof(task_data->json_data) - 1;
-
-    if (json_len > max_json_copy) {
-        ESP_LOGW(TAG, "JSON data length (%zu) exceeds buffer size (%zu), will be truncated",
-                 json_len, max_json_copy);
-    }
-    strncpy(task_data->json_data, json_data, max_json_copy);
-    task_data->json_data[max_json_copy] = '\0'; // Ensure null terminator
+    strncpy(task_data->json_data, json_data, sizeof(task_data->json_data) - 1);
+    task_data->json_data[sizeof(task_data->json_data) - 1] = '\0';
 
     // Create task with larger stack
     BaseType_t task_created = xTaskCreate(
         firebase_send_task,
         "firebase_send_task",
         12288,  // Stack size
-        task_data,  // Pass pointer to allocated memory
-        5,     // Priority
+        task_data,
+        5,      // Priority
         NULL
     );
 
@@ -125,22 +105,16 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Waiting for Firebase send task to complete");
-
     // Wait for task completion with timeout
     esp_err_t result;
     if (xSemaphoreTake(task_data->done_semaphore, pdMS_TO_TICKS(30000)) != pdTRUE) {
         ESP_LOGE(TAG, "Firebase send task timeout");
-        // Don't free task_data as the task might still be using it
         vSemaphoreDelete(task_data->done_semaphore);
         return ESP_ERR_TIMEOUT;
     }
 
     // Save the result
     result = task_data->result;
-
-    ESP_LOGI(TAG, "Firebase send task completed with result: %s",
-             result == ESP_OK ? "OK" : "Failed");
 
     // Clean up
     vSemaphoreDelete(task_data->done_semaphore);
@@ -149,92 +123,113 @@ esp_err_t firebase_send_data_safe(const char *collection, const char *document_i
     return result;
 }
 
-// Function to send sensor data with retries using a separate task
-esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp_str, int max_retries) {
-    esp_err_t ret = ESP_FAIL;
-
-    time_t timestamp = parse_timestamp_for_firebase(timestamp_str); // Convert time string to Unix time
-    if (timestamp == (time_t)-1) {
-        ESP_LOGE(TAG, "Failed to parse timestamp string: %s", timestamp_str);
-        return ESP_FAIL;
-    }
-
-    // Create JSON data for the sensor reading
-    char json_data[256];
-    snprintf(json_data, sizeof(json_data), 
-        "{\"tag_id\": \"%s\", \"temperature\": %.2f, \"humidity\": %.2f, \"timestamp\": %ld}",
-        tag_id, temperature, humidity, (long)timestamp);
-
-    for (int i = 0; i < max_retries; i++) {
-        // Send data to "measurements" collection with auto-generated document ID
-        ret = firebase_send_data_safe("measurements", NULL, json_data);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Succesfully sent sensor data to Cloud Firestore");
-            return ESP_OK;
-        }
-
-        ESP_LOGI(TAG, "Failed to send sensor data, retrying (%d/%d)", i + 1, max_retries);
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Wait before retrying
-    }
-
-    ESP_LOGE(TAG, "All sensor data send retries failed");
-    return ret;
-}
-
+// Основная функция для отправки итоговых измерений в Firebase
 esp_err_t send_final_measurements_to_firebase(const char *measurements) {
-    if (measurements == NULL) {
+    if (!measurements) {
+        ESP_LOGE(TAG, "Measurements data is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Проверка валидности JSON и получение количества элементов
     cJSON *measurements_array = cJSON_Parse(measurements);
-    if (measurements_array == NULL) {
+    if (!measurements_array) {
         ESP_LOGE(TAG, "JSON parse error: %s", cJSON_GetErrorPtr());
         return ESP_FAIL;
     }
-
-    esp_err_t overall_status = ESP_OK;
-    cJSON *measurement;
-    int total_items = cJSON_GetArraySize(measurements_array);
-    int successful = 0;
-    int failed = 0;
     
+    int total_items = cJSON_GetArraySize(measurements_array);
     ESP_LOGI(TAG, "Total measurements to send: %d", total_items);
     
-    cJSON_ArrayForEach(measurement, measurements_array) {
-        cJSON *time_json = cJSON_GetObjectItem(measurement, "time");
-        cJSON *temp_json = cJSON_GetObjectItem(measurement, "t");
-        cJSON *hum_json = cJSON_GetObjectItem(measurement, "h");
-        cJSON *mac_json = cJSON_GetObjectItem(measurement, "mac");
+    if (total_items == 0) {
+        ESP_LOGW(TAG, "No measurements to send");
+        cJSON_Delete(measurements_array);
+        return ESP_OK;
+    }
 
-        if (!time_json || !temp_json || !hum_json || !mac_json) {
-            ESP_LOGE(TAG, "Missing required measurements fields");
-            overall_status = ESP_FAIL;
-            failed++;
-            continue;
-        }
-
-        const char *timestamp = time_json->valuestring; // Format: 2025-04-09 16:12:12
-        float temperature = atof(temp_json->valuestring);
-        float humidity = atof(hum_json->valuestring);
-        const char *tag_id = mac_json->valuestring; // MAC address
-
-        esp_err_t ret = firebase_send_sensor_data_with_retries(tag_id, temperature, humidity, timestamp, 3);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to send data to Firebase: %s", esp_err_to_name(ret));
-            overall_status = ret; // Update overall status
-            failed++;
-        } else {
-            ESP_LOGI(TAG, "Data sent to Firebase successfully");
-            successful++;
-        }
+    // Получаем первый элемент массива и его MAC-адрес для tag_id
+    cJSON *first_item = cJSON_GetArrayItem(measurements_array, 0);
+    cJSON *mac_json = cJSON_GetObjectItem(first_item, "mac");
+    
+    if (!mac_json || !mac_json->valuestring) {
+        ESP_LOGE(TAG, "Invalid MAC address in first measurement");
+        cJSON_Delete(measurements_array);
+        return ESP_FAIL;
     }
     
-    ESP_LOGI(TAG, "Sending summary: %d successful, %d failed records out of %d",
-             successful, failed, total_items);
-             
-    cJSON_Delete(measurements_array); // Free the JSON object
-    return overall_status;
-}
-
-
+    // Получаем дату из первой временной метки
+    cJSON *time_json = cJSON_GetObjectItem(first_item, "time");
+    if (!time_json || !time_json->valuestring) {
+        ESP_LOGE(TAG, "Invalid timestamp in first measurement");
+        cJSON_Delete(measurements_array);
+        return ESP_FAIL;
+    }
     
+    // Извлекаем дату из временной метки (YYYY-MM-DD HH:MM:SS)
+    char day[11] = {0}; // YYYY-MM-DD\0
+    strncpy(day, time_json->valuestring, 10);
+    day[10] = '\0';
+    
+    // Создаем основной JSON-объект для отправки
+    cJSON *data_object = cJSON_CreateObject();
+    cJSON_AddStringToObject(data_object, "tag_id", mac_json->valuestring);
+    cJSON_AddStringToObject(data_object, "day", day);
+    
+    // Создаем массив измерений
+    cJSON *measurements_list = cJSON_CreateArray();
+    
+    // Добавляем все измерения в массив
+    for (int i = 0; i < total_items; i++) {
+        cJSON *measurement = cJSON_GetArrayItem(measurements_array, i);
+        if (!measurement) {
+            continue;
+        }
+        
+        // Извлекаем необходимые поля
+        cJSON *temp_json = cJSON_GetObjectItem(measurement, "t");
+        cJSON *hum_json = cJSON_GetObjectItem(measurement, "h");
+        cJSON *item_time_json = cJSON_GetObjectItem(measurement, "time");
+        
+        if (!temp_json || !temp_json->valuestring || 
+            !hum_json || !hum_json->valuestring || 
+            !item_time_json || !item_time_json->valuestring) {
+            ESP_LOGW(TAG, "Skipping measurement with missing fields at index %d", i);
+            continue;
+        }
+        
+        // Извлекаем только время из временной метки (HH:MM:SS)
+        char timestamp[9] = {0};
+        const char *full_time = item_time_json->valuestring;
+        if (strlen(full_time) >= 19) {
+            strncpy(timestamp, full_time + 11, 8);
+            timestamp[8] = '\0';
+        } else {
+            strncpy(timestamp, full_time, 8);
+            timestamp[8] = '\0';
+        }
+        
+        // Создаем объект для текущего измерения
+        cJSON *measurement_object = cJSON_CreateObject();
+        cJSON_AddNumberToObject(measurement_object, "temperature", atof(temp_json->valuestring));
+        cJSON_AddNumberToObject(measurement_object, "humidity", atof(hum_json->valuestring));
+        cJSON_AddStringToObject(measurement_object, "timestamp", timestamp);
+        
+        // Добавляем объект измерения в массив
+        cJSON_AddItemToArray(measurements_list, measurement_object);
+    }
+    
+    // Добавляем массив измерений в основной объект
+    cJSON_AddItemToObject(data_object, "measurements", measurements_list);
+    
+    // Преобразуем объект в строку JSON
+    char *json_data = cJSON_PrintUnformatted(data_object);
+    
+    // Отправляем данные в Firebase
+    esp_err_t result = firebase_send_data_safe("daily_measurements", NULL, json_data);
+    
+    // Освобождаем ресурсы
+    free(json_data);
+    cJSON_Delete(data_object);
+    cJSON_Delete(measurements_array);
+    
+    return result;
+}
