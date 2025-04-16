@@ -1,4 +1,9 @@
 #include <stdio.h>
+
+// Global logging definitions. If true, logging will be enabled.
+#define DISCORD_LOGGING false
+#define SYSTEM_LOGGING true
+
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_pm.h" 
@@ -27,11 +32,10 @@
 
 
 static const char *TAG = "main";
-
-//#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
-#define SEND_DATA_CYCLE 144  // For testing 3
-#define TRIGGER_INTERVAL    600000000 // 10 minutes in microseconds
+#define SECONDS_IN_MICROS 1000000ULL
+#define SEND_DATA_CYCLE 3  // For testing 3
+#define TRIGGER_INTERVAL    (60 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
 
 static volatile bool data_received = false;  // Flag for data received
 // Safe message initialization
@@ -53,6 +57,17 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
         data_saved = true;     // Mark that we saved
         data_received = true;  // Set the flag for the main cycle
     }
+}
+
+// Unsuccessful initialization
+static void unsuccessful_init() {
+    //ESP_LOGE(TAG, "Failed to initialize GSM or Discord API");
+    storage_append_log("Unsuccessful initialization detected");
+    ESP_LOGE(TAG, "Restarting modem in 10 seconds");
+    storage_set_error_flag();
+    modem_power_off();
+    vTaskDelay(pdMS_TO_TICKS(10000)); // Restart in 10 seconds
+    esp_restart();
 }
 
 static esp_err_t sending_message_to_discord() {
@@ -80,20 +95,16 @@ static esp_err_t sending_message_to_discord() {
     return ESP_OK;
 }
 
-// Unsuccessful initialization
-static void unsuccessful_init() {
-    //ESP_LOGE(TAG, "Failed to initialize GSM or Discord API");
-    storage_append_log("Unsuccessful initialization detected");
-    ESP_LOGE(TAG, "Restarting modem in 10 seconds");
-    storage_set_error_flag();
-    modem_power_off();
-    vTaskDelay(pdMS_TO_TICKS(10000)); // Restart in 10 seconds
-    esp_restart();
-}
 
 // Main function
 void app_main(void)
-{               
+{   
+    #if !SYSTEM_LOGGING
+    ESP_LOGI(TAG, "Logging is disabled");
+    ESP_LOGI(TAG, "Program started");
+    esp_log_level_set("*", ESP_LOG_NONE);
+    #endif
+
     // Save start time and trigger time
     int64_t start_time = esp_timer_get_time();
     vTaskDelay(pdMS_TO_TICKS(100)); // Give time for NVS to save
@@ -140,7 +151,7 @@ void app_main(void)
             storage_append_log("Entering second block recovery mode");
             goto second_block_init;
             
-        #if LOGGING
+        #if DISCORD_LOGGING
         case STATE_THIRD_BLOCK_RECOVERY:
             storage_append_log("Entering third block recovery mode");
             goto third_block_init;
@@ -249,27 +260,28 @@ second_block_init:
                 unsuccessful_init();
             } else {
                 network_initialized = true;
-
-                // Add time synchronization
-                time_t network_time = gsm_get_network_time();
-                if (network_time > 0) {
-                    time_manager_set_from_timestamp(network_time); // Synchronize time
-                } else {
-                    storage_append_log("Failed to synchronize time with NTP");
-                }
-            }
-
-            // Setting the normal state
-            storage_set_system_state(STATE_NORMAL);
-            vTaskDelay(pdMS_TO_TICKS(500));
-
-            // Firebase API initialization for data sending
-            ret = firebase_init();
-            if (ret != ESP_OK) {
-                storage_append_log("Firebase init failed for data sending");
-                unsuccessful_init();
             }
         }
+
+        // Add time synchronization
+        time_t network_time = gsm_get_network_time();
+        if (network_time > 0) {
+            time_manager_set_from_timestamp(network_time); // Synchronize time
+        } else {
+            storage_append_log("Failed to synchronize time with NTP");
+        }
+
+        // Setting the normal state
+        storage_set_system_state(STATE_NORMAL);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        // Firebase API initialization for data sending
+        ret = firebase_init();
+        if (ret != ESP_OK) {
+            storage_append_log("Firebase init failed for data sending");
+            unsuccessful_init();
+        }
+    
         // Getting measurements from storage and sending them
         if (network_initialized) {
             
@@ -287,6 +299,12 @@ second_block_init:
                     storage_append_log("Failed to send measurements");
                 }
             }
+        }
+
+        // Discord message about battery status
+        ret = sending_message_to_discord();
+        if (ret != ESP_OK) {
+            storage_append_log("Failed to send message about battery status");
         }
             
         storage_append_log("Done");
@@ -309,7 +327,7 @@ second_block_init:
     
     
     // Sending logs if data was sent
-    #if LOGGING
+    #if DISCORD_LOGGING
     if (data_from_storage_sent && !network_initialized) {
         storage_append_log("Sending logs");
 
@@ -360,8 +378,10 @@ third_block_init:
     
     storage_set_system_state(STATE_NORMAL);
     
-    // Preparing for sleep
+#if DISCORD_LOGGING
+// Preparing for sleep
 sleep_prepare:
+#endif
     // Calculate execution time and remaining sleep time
     int64_t current_time = esp_timer_get_time();
     int64_t execution_time = current_time - start_time;

@@ -194,6 +194,12 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
 
     esp_err_t overall_status = ESP_OK;
     cJSON *measurement;
+    int total_items = cJSON_GetArraySize(measurements_array);
+    int successful = 0;
+    int failed = 0;
+    
+    ESP_LOGI(TAG, "Total measurements to send: %d", total_items);
+    
     cJSON_ArrayForEach(measurement, measurements_array) {
         cJSON *time_json = cJSON_GetObjectItem(measurement, "time");
         cJSON *temp_json = cJSON_GetObjectItem(measurement, "t");
@@ -203,6 +209,7 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
         if (!time_json || !temp_json || !hum_json || !mac_json) {
             ESP_LOGE(TAG, "Missing required measurements fields");
             overall_status = ESP_FAIL;
+            failed++;
             continue;
         }
 
@@ -215,10 +222,19 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Failed to send data to Firebase: %s", esp_err_to_name(ret));
             overall_status = ret; // Update overall status
+            failed++;
         } else {
             ESP_LOGI(TAG, "Data sent to Firebase successfully");
+            successful++;
         }
     }
+    
+    ESP_LOGI(TAG, "Sending summary: %d successful, %d failed records out of %d",
+             successful, failed, total_items);
+             
     cJSON_Delete(measurements_array); // Free the JSON object
     return overall_status;
 }
+
+
+    

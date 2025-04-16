@@ -236,7 +236,7 @@ esp_err_t storage_clear_measurements(void) {
 
 // Storaging the logs in SPIFFS
 esp_err_t storage_append_log(const char* log_message) {
-    #if LOGGING
+    #if DISCORD_LOGGING
     if (!check_spiffs_status()) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -261,6 +261,7 @@ esp_err_t storage_append_log(const char* log_message) {
 
 // Getting the logs from SPIFFS
 char* storage_get_logs(void) {
+    #if DISCORD_LOGGING
     static const char* TAG = "storage";
     
     if (!check_spiffs_status()) {
@@ -347,6 +348,9 @@ char* storage_get_logs(void) {
     ESP_LOGI(TAG, "Successfully read %zu bytes from log file", total_read);
     
     return log_str;
+    #else
+    return NULL;
+    #endif
 }
 
 

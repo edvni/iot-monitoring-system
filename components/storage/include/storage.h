@@ -1,8 +1,6 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
-#define LOGGING false
-
 #include "esp_err.h"
 #include <stdbool.h>
 #include "sensors.h"
