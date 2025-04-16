@@ -11,19 +11,19 @@
 #include "cJSON.h"
 
 /**
- * @brief Инициализация Firebase API
+ * @brief Initialize Firebase API
  * 
- * @return esp_err_t ESP_OK в случае успеха, иначе код ошибки
+ * @return esp_err_t ESP_OK on success, error code otherwise
  */
 esp_err_t firebase_init(void);
 
 /**
- * @brief Отправляет данные в Firestore
+ * @brief Send data to Firestore
  * 
- * @param collection Имя коллекции в Firestore
- * @param document_id ID документа (если NULL, будет сгенерирован автоматически)
- * @param json_data JSON данные для отправки
- * @return esp_err_t ESP_OK в случае успеха, иначе код ошибки
+ * @param collection Firestore collection name
+ * @param document_id Document ID (if NULL, will be auto-generated)
+ * @param json_data JSON data to send
+ * @return esp_err_t ESP_OK on success, error code otherwise
  */
 esp_err_t firebase_send_data(const char *collection, const char *document_id, const char *json_data);
 
@@ -39,10 +39,10 @@ esp_err_t firebase_send_data(const char *collection, const char *document_id, co
 // esp_err_t firebase_send_sensor_data_with_retries(const char *tag_id, float temperature, float humidity, const char *timestamp, int max_retries);
 
 /**
- * @brief Отправляет все измерения в Firestore
+ * @brief Send all measurements to Firestore
  * 
- * @param measurements Строка JSON с измерениями
- * @return esp_err_t ESP_OK в случае успеха, иначе код ошибки
+ * @param measurements JSON string with measurements
+ * @return esp_err_t ESP_OK on success, error code otherwise
  */
 esp_err_t send_final_measurements_to_firebase(const char *measurements);
 

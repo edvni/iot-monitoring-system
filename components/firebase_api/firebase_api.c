@@ -128,26 +128,26 @@ static char* format_firestore_data(const char *json_str) {
         } else if (cJSON_IsNull(item)) {
             cJSON_AddNullToObject(value_obj, "nullValue");
         } else if (cJSON_IsArray(item)) {
-            // Обработка массивов для Firestore
+            // Process arrays for Firestore
             cJSON *array_value = cJSON_CreateObject();
             cJSON *values_array = cJSON_CreateArray();
             
-            // Итерируемся по элементам массива
+            // Iterate through array elements
             cJSON *array_item = item->child;
             while (array_item != NULL) {
-                // Если это объект в массиве
+                // If this is an object in the array
                 if (cJSON_IsObject(array_item)) {
-                    // Создаем структуру mapValue для каждого элемента массива
+                    // Create mapValue structure for each array element
                     cJSON *map_obj = cJSON_CreateObject();
                     cJSON *map_value = cJSON_CreateObject();
                     cJSON *map_fields = cJSON_CreateObject();
                     
-                    // Итерируемся по полям этого объекта
+                    // Iterate through fields of this object
                     cJSON *field = array_item->child;
                     while (field != NULL) {
                         cJSON *field_value_obj = cJSON_CreateObject();
                         
-                        // Форматируем поле в зависимости от типа
+                        // Format field based on type
                         if (cJSON_IsString(field)) {
                             cJSON_AddStringToObject(field_value_obj, "stringValue", field->valuestring);
                         } else if (cJSON_IsNumber(field)) {
@@ -162,40 +162,40 @@ static char* format_firestore_data(const char *json_str) {
                             cJSON_AddNullToObject(field_value_obj, "nullValue");
                         }
                         
-                        // Добавляем поле в объект полей
+                        // Add field to fields object
                         cJSON_AddItemToObject(map_fields, field->string, field_value_obj);
                         field = field->next;
                     }
                     
-                    // Добавляем объект полей в mapValue
+                    // Add fields object to mapValue
                     cJSON_AddItemToObject(map_value, "fields", map_fields);
-                    // Добавляем mapValue в объект
+                    // Add mapValue to object
                     cJSON_AddItemToObject(map_obj, "mapValue", map_value);
-                    // Добавляем объект в массив значений
+                    // Add object to values array
                     cJSON_AddItemToArray(values_array, map_obj);
                 }
                 
                 array_item = array_item->next;
             }
             
-            // Добавляем массив значений в структуру для Firestore
+            // Add values array to Firestore structure
             cJSON_AddItemToObject(array_value, "arrayValue", cJSON_CreateObject());
             cJSON_AddItemToObject(cJSON_GetObjectItem(array_value, "arrayValue"), "values", values_array);
             
-            // Заменяем value_obj на array_value
+            // Replace value_obj with array_value
             cJSON_Delete(value_obj);
             value_obj = array_value;
         } else if (cJSON_IsObject(item)) {
-            // Обработка вложенных объектов для Firestore
+            // Process nested objects for Firestore
             cJSON *map_value = cJSON_CreateObject();
             cJSON *map_fields = cJSON_CreateObject();
             
-            // Итерируемся по полям вложенного объекта
+            // Iterate through fields of nested object
             cJSON *obj_item = item->child;
             while (obj_item != NULL) {
                 cJSON *field_value_obj = cJSON_CreateObject();
                 
-                // Форматируем поле в зависимости от типа
+                // Format field based on type
                 if (cJSON_IsString(obj_item)) {
                     cJSON_AddStringToObject(field_value_obj, "stringValue", obj_item->valuestring);
                 } else if (cJSON_IsNumber(obj_item)) {
@@ -210,16 +210,16 @@ static char* format_firestore_data(const char *json_str) {
                     cJSON_AddNullToObject(field_value_obj, "nullValue");
                 }
                 
-                // Добавляем поле в объект полей
+                // Add field to fields object
                 cJSON_AddItemToObject(map_fields, obj_item->string, field_value_obj);
                 obj_item = obj_item->next;
             }
             
-            // Добавляем объект полей в mapValue
+            // Add fields object to mapValue
             cJSON_AddItemToObject(map_value, "mapValue", cJSON_CreateObject());
             cJSON_AddItemToObject(cJSON_GetObjectItem(map_value, "mapValue"), "fields", map_fields);
             
-            // Заменяем value_obj на map_value
+            // Replace value_obj with map_value
             cJSON_Delete(value_obj);
             value_obj = map_value;
         }
@@ -241,7 +241,7 @@ static char* format_firestore_data(const char *json_str) {
 // Public function implementations
 
 esp_err_t firebase_init(void) {
-    // Проверяем, установлено ли время
+    // Check if time is set
     time_t now = 0;
     time(&now);
 
@@ -250,7 +250,7 @@ esp_err_t firebase_init(void) {
         return ESP_FAIL;
     }
 
-    // Генерируем начальный JWT токен
+    // Generate initial JWT token
     esp_err_t err = create_jwt_token();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create initial JWT token");
@@ -261,9 +261,9 @@ esp_err_t firebase_init(void) {
     return ESP_OK;
 }
 
-// Отправляет данные в Firestore
+// Send data to Firestore
 esp_err_t firebase_send_data(const char *collection, const char *document_id, const char *json_data) {
-    // Проверка параметров
+    // Check parameters
     if (!collection || !json_data) {
         return ESP_ERR_INVALID_ARG;
     }

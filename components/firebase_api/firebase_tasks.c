@@ -25,7 +25,7 @@ typedef struct {
     esp_err_t result;
 } firebase_task_data_t;
 
-// Задача для отправки данных Firebase
+// Task for sending data to Firebase
 static void firebase_send_task(void *pvParameters) {
     firebase_task_data_t *task_data = (firebase_task_data_t *)pvParameters;
     
@@ -35,7 +35,7 @@ static void firebase_send_task(void *pvParameters) {
         doc_id = task_data->document_id;
     }
     
-    // Отправляем данные
+    // Send data
     task_data->result = firebase_send_data(task_data->collection, doc_id, task_data->json_data);
     
     // Signal completion
@@ -43,7 +43,7 @@ static void firebase_send_task(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
-// Функция для безопасной отправки данных в Firebase через отдельную задачу
+// Function for safely sending data to Firebase via a separate task
 static esp_err_t firebase_send_data_safe(const char *collection, const char *document_id, const char *json_data) {
     if (!collection || !json_data) {
         ESP_LOGE(TAG, "Invalid parameters");
@@ -123,14 +123,14 @@ static esp_err_t firebase_send_data_safe(const char *collection, const char *doc
     return result;
 }
 
-// Основная функция для отправки итоговых измерений в Firebase
+// Main function for sending final measurements to Firebase
 esp_err_t send_final_measurements_to_firebase(const char *measurements) {
     if (!measurements) {
         ESP_LOGE(TAG, "Measurements data is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Проверка валидности JSON и получение количества элементов
+    // Check JSON validity and get the number of elements
     cJSON *measurements_array = cJSON_Parse(measurements);
     if (!measurements_array) {
         ESP_LOGE(TAG, "JSON parse error: %s", cJSON_GetErrorPtr());
@@ -146,7 +146,7 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
         return ESP_OK;
     }
 
-    // Получаем первый элемент массива и его MAC-адрес для tag_id
+    // Get the first array element and its MAC address for tag_id
     cJSON *first_item = cJSON_GetArrayItem(measurements_array, 0);
     cJSON *mac_json = cJSON_GetObjectItem(first_item, "mac");
     
@@ -156,7 +156,7 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
         return ESP_FAIL;
     }
     
-    // Получаем дату из первой временной метки
+    // Get date from the first timestamp
     cJSON *time_json = cJSON_GetObjectItem(first_item, "time");
     if (!time_json || !time_json->valuestring) {
         ESP_LOGE(TAG, "Invalid timestamp in first measurement");
@@ -164,27 +164,27 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
         return ESP_FAIL;
     }
     
-    // Извлекаем дату из временной метки (YYYY-MM-DD HH:MM:SS)
+    // Extract date from timestamp (YYYY-MM-DD HH:MM:SS)
     char day[11] = {0}; // YYYY-MM-DD\0
     strncpy(day, time_json->valuestring, 10);
     day[10] = '\0';
     
-    // Создаем основной JSON-объект для отправки
+    // Create the main JSON object for sending
     cJSON *data_object = cJSON_CreateObject();
     cJSON_AddStringToObject(data_object, "tag_id", mac_json->valuestring);
     cJSON_AddStringToObject(data_object, "day", day);
     
-    // Создаем массив измерений
+    // Create measurements array
     cJSON *measurements_list = cJSON_CreateArray();
     
-    // Добавляем все измерения в массив
+    // Add all measurements to the array
     for (int i = 0; i < total_items; i++) {
         cJSON *measurement = cJSON_GetArrayItem(measurements_array, i);
         if (!measurement) {
             continue;
         }
         
-        // Извлекаем необходимые поля
+        // Extract required fields
         cJSON *temp_json = cJSON_GetObjectItem(measurement, "t");
         cJSON *hum_json = cJSON_GetObjectItem(measurement, "h");
         cJSON *item_time_json = cJSON_GetObjectItem(measurement, "time");
@@ -196,7 +196,7 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
             continue;
         }
         
-        // Извлекаем только время из временной метки (HH:MM:SS)
+        // Extract only time from timestamp (HH:MM:SS)
         char timestamp[9] = {0};
         const char *full_time = item_time_json->valuestring;
         if (strlen(full_time) >= 19) {
@@ -207,26 +207,26 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements) {
             timestamp[8] = '\0';
         }
         
-        // Создаем объект для текущего измерения
+        // Create an object for the current measurement
         cJSON *measurement_object = cJSON_CreateObject();
         cJSON_AddNumberToObject(measurement_object, "temperature", atof(temp_json->valuestring));
         cJSON_AddNumberToObject(measurement_object, "humidity", atof(hum_json->valuestring));
         cJSON_AddStringToObject(measurement_object, "timestamp", timestamp);
         
-        // Добавляем объект измерения в массив
+        // Add measurement object to array
         cJSON_AddItemToArray(measurements_list, measurement_object);
     }
     
-    // Добавляем массив измерений в основной объект
+    // Add measurements array to the main object
     cJSON_AddItemToObject(data_object, "measurements", measurements_list);
     
-    // Преобразуем объект в строку JSON
+    // Convert object to JSON string
     char *json_data = cJSON_PrintUnformatted(data_object);
     
-    // Отправляем данные в Firebase
+    // Send data to Firebase
     esp_err_t result = firebase_send_data_safe("daily_measurements", NULL, json_data);
     
-    // Освобождаем ресурсы
+    // Free resources
     free(json_data);
     cJSON_Delete(data_object);
     cJSON_Delete(measurements_array);
