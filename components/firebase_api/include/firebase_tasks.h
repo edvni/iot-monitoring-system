@@ -13,15 +13,15 @@
 extern "C" {
 #endif
 
-/**
- * @brief Send Firebase data safely using a separate task with a large stack
- * 
- * @param collection The Firestore collection name
- * @param document_id The document ID (NULL or empty for auto-generated ID)
- * @param json_data The JSON data to send
- * @return esp_err_t ESP_OK on success, otherwise an error code
- */
-esp_err_t firebase_send_data_safe(const char *collection, const char *document_id, const char *json_data);
+// /**
+//  * @brief Send Firebase data safely using a separate task with a large stack
+//  * 
+//  * @param collection The Firestore collection name
+//  * @param document_id The document ID (NULL or empty for auto-generated ID)
+//  * @param json_data The JSON data to send
+//  * @return esp_err_t ESP_OK on success, otherwise an error code
+//  */
+// esp_err_t firebase_send_data_safe(const char *collection, const char *document_id, const char *json_data);
 
 #ifdef __cplusplus
 }

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <inttypes.h>  
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -17,9 +18,14 @@
 #include "cJSON.h"
 #include "mbedtls/base64.h"
 #include "lwip/sockets.h"
+#include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 
 #define ESP_TLS_VER_TLS_1_2 0x0303 /* TLS 1.2 */
 #define ESP_TLS_VER_TLS_1_3 0x0304 /* TLS 1.3 */
+#define HTTP_RX_BUFFER_SIZE 8192    // Increased from 2048
+#define HTTP_TX_BUFFER_SIZE 17408   // Increased from 4096 to 64K
+#define MAX_HTTP_RETRIES 3         // Максимальное количество повторных попыток
 
 static const char *TAG = "firebase_api";
 
@@ -31,7 +37,7 @@ static int64_t token_expiration_time = 0;
 static esp_err_t create_jwt_token(void);
 static bool is_token_valid(void);
 static esp_err_t firebase_http_event_handler(esp_http_client_event_t *evt);
-static char* format_firestore_data(const char *json_str);
+//static char* format_firestore_data(const char *json_str);
 
 // Create a JWT token for Firebase authentication
 static esp_err_t create_jwt_token(void) {
@@ -88,156 +94,6 @@ static esp_err_t firebase_http_event_handler(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
-// Format Firestore document data
-static char* format_firestore_data(const char *json_str) {
-    cJSON *root = cJSON_CreateObject();
-    cJSON *fields = cJSON_CreateObject();
-
-    // Parse the input JSON
-    cJSON *input_json = cJSON_Parse(json_str);
-    if (input_json == NULL || !cJSON_IsObject(input_json)) {
-        ESP_LOGE(TAG, "Invalid JSON input");
-        cJSON_Delete(root);
-        return NULL;
-    }
-
-    // Convert each field to Firestore format
-    cJSON *item = input_json->child;
-    while (item != NULL) {
-        cJSON *value_obj = cJSON_CreateObject();
-
-        // Determine field type and format accordingly
-        if (cJSON_IsString(item)) {
-            cJSON_AddStringToObject(value_obj, "stringValue", item->valuestring);
-        } else if (cJSON_IsNumber(item)) {
-            if (strcmp(item->string, "timestamp") == 0) {
-                // Convert Unix time to ISO 8601
-                time_t raw_time = (time_t)item->valuedouble;
-                struct tm *timeinfo = gmtime(&raw_time);
-                char timestamp_str[40];
-                strftime(timestamp_str, sizeof(timestamp_str), "%Y-%m-%dT%H:%M:%S", timeinfo);
-                strcat(timestamp_str, ".000Z"); // Append milliseconds and Zulu time
-                cJSON_AddStringToObject(value_obj, "timestampValue", timestamp_str);
-            } else if (item->valuedouble == (double)(int)item->valuedouble) {
-                cJSON_AddNumberToObject(value_obj, "integerValue", (int)item->valuedouble);
-            } else {
-                cJSON_AddNumberToObject(value_obj, "doubleValue", item->valuedouble);
-            }
-        } else if (cJSON_IsBool(item)) {
-            cJSON_AddBoolToObject(value_obj, "booleanValue", item->valueint ? 1 : 0);
-        } else if (cJSON_IsNull(item)) {
-            cJSON_AddNullToObject(value_obj, "nullValue");
-        } else if (cJSON_IsArray(item)) {
-            // Process arrays for Firestore
-            cJSON *array_value = cJSON_CreateObject();
-            cJSON *values_array = cJSON_CreateArray();
-            
-            // Iterate through array elements
-            cJSON *array_item = item->child;
-            while (array_item != NULL) {
-                // If this is an object in the array
-                if (cJSON_IsObject(array_item)) {
-                    // Create mapValue structure for each array element
-                    cJSON *map_obj = cJSON_CreateObject();
-                    cJSON *map_value = cJSON_CreateObject();
-                    cJSON *map_fields = cJSON_CreateObject();
-                    
-                    // Iterate through fields of this object
-                    cJSON *field = array_item->child;
-                    while (field != NULL) {
-                        cJSON *field_value_obj = cJSON_CreateObject();
-                        
-                        // Format field based on type
-                        if (cJSON_IsString(field)) {
-                            cJSON_AddStringToObject(field_value_obj, "stringValue", field->valuestring);
-                        } else if (cJSON_IsNumber(field)) {
-                            if (field->valuedouble == (double)(int)field->valuedouble) {
-                                cJSON_AddNumberToObject(field_value_obj, "integerValue", (int)field->valuedouble);
-                            } else {
-                                cJSON_AddNumberToObject(field_value_obj, "doubleValue", field->valuedouble);
-                            }
-                        } else if (cJSON_IsBool(field)) {
-                            cJSON_AddBoolToObject(field_value_obj, "booleanValue", field->valueint ? 1 : 0);
-                        } else if (cJSON_IsNull(field)) {
-                            cJSON_AddNullToObject(field_value_obj, "nullValue");
-                        }
-                        
-                        // Add field to fields object
-                        cJSON_AddItemToObject(map_fields, field->string, field_value_obj);
-                        field = field->next;
-                    }
-                    
-                    // Add fields object to mapValue
-                    cJSON_AddItemToObject(map_value, "fields", map_fields);
-                    // Add mapValue to object
-                    cJSON_AddItemToObject(map_obj, "mapValue", map_value);
-                    // Add object to values array
-                    cJSON_AddItemToArray(values_array, map_obj);
-                }
-                
-                array_item = array_item->next;
-            }
-            
-            // Add values array to Firestore structure
-            cJSON_AddItemToObject(array_value, "arrayValue", cJSON_CreateObject());
-            cJSON_AddItemToObject(cJSON_GetObjectItem(array_value, "arrayValue"), "values", values_array);
-            
-            // Replace value_obj with array_value
-            cJSON_Delete(value_obj);
-            value_obj = array_value;
-        } else if (cJSON_IsObject(item)) {
-            // Process nested objects for Firestore
-            cJSON *map_value = cJSON_CreateObject();
-            cJSON *map_fields = cJSON_CreateObject();
-            
-            // Iterate through fields of nested object
-            cJSON *obj_item = item->child;
-            while (obj_item != NULL) {
-                cJSON *field_value_obj = cJSON_CreateObject();
-                
-                // Format field based on type
-                if (cJSON_IsString(obj_item)) {
-                    cJSON_AddStringToObject(field_value_obj, "stringValue", obj_item->valuestring);
-                } else if (cJSON_IsNumber(obj_item)) {
-                    if (obj_item->valuedouble == (double)(int)obj_item->valuedouble) {
-                        cJSON_AddNumberToObject(field_value_obj, "integerValue", (int)obj_item->valuedouble);
-                    } else {
-                        cJSON_AddNumberToObject(field_value_obj, "doubleValue", obj_item->valuedouble);
-                    }
-                } else if (cJSON_IsBool(obj_item)) {
-                    cJSON_AddBoolToObject(field_value_obj, "booleanValue", obj_item->valueint ? 1 : 0);
-                } else if (cJSON_IsNull(obj_item)) {
-                    cJSON_AddNullToObject(field_value_obj, "nullValue");
-                }
-                
-                // Add field to fields object
-                cJSON_AddItemToObject(map_fields, obj_item->string, field_value_obj);
-                obj_item = obj_item->next;
-            }
-            
-            // Add fields object to mapValue
-            cJSON_AddItemToObject(map_value, "mapValue", cJSON_CreateObject());
-            cJSON_AddItemToObject(cJSON_GetObjectItem(map_value, "mapValue"), "fields", map_fields);
-            
-            // Replace value_obj with map_value
-            cJSON_Delete(value_obj);
-            value_obj = map_value;
-        }
-
-        cJSON_AddItemToObject(fields, item->string, value_obj);
-        item = item->next;
-    }
-
-    cJSON_AddItemToObject(root, "fields", fields);
-    char *formatted_data = cJSON_PrintUnformatted(root);
-
-    // Clean up
-    cJSON_Delete(input_json);
-    cJSON_Delete(root);
-
-    return formatted_data;
-}
-
 // Public function implementations
 
 esp_err_t firebase_init(void) {
@@ -250,6 +106,11 @@ esp_err_t firebase_init(void) {
         return ESP_FAIL;
     }
 
+    // Включаем отладочный вывод TLS
+    esp_log_level_set("esp-tls", ESP_LOG_DEBUG);
+    esp_log_level_set("esp-tls-mbedtls", ESP_LOG_DEBUG);
+    ESP_LOGI(TAG, "TLS debug logging enabled");
+
     // Generate initial JWT token
     esp_err_t err = create_jwt_token();
     if (err != ESP_OK) {
@@ -261,26 +122,145 @@ esp_err_t firebase_init(void) {
     return ESP_OK;
 }
 
-// Send data to Firestore
-esp_err_t firebase_send_data(const char *collection, const char *document_id, const char *json_data) {
+// // Send data to Firestore
+// esp_err_t firebase_send_data(const char *collection, const char *document_id, const char *json_data) {
+//     // Check parameters
+//     if (!collection || !json_data) {
+//         return ESP_ERR_INVALID_ARG;
+//     }
+
+//     // Log input data size
+//     ESP_LOGI(TAG, "Input JSON size: %d bytes", strlen(json_data));
+//     ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", esp_get_free_heap_size());
+
+//     // Format data for Firestore
+//     char *firestore_data = format_firestore_data(json_data);
+//     if (firestore_data == NULL) {
+//         ESP_LOGE(TAG, "Failed to format data for Firestore");
+//         return ESP_FAIL;
+//     }
+    
+//     // Check and refresh token if needed
+//     if (!is_token_valid()) {
+//         ESP_LOGI(TAG, "Token expired or about to expire, generating new token");
+//         if (create_jwt_token() != ESP_OK) {
+//             ESP_LOGE(TAG, "Failed to create new JWT token");
+//             free(firestore_data);
+//             return ESP_FAIL;
+//         }
+//     }
+
+//     // Format URL
+//     char url[256];
+//     if (document_id != NULL && strlen(document_id) > 0) {
+//         // Update/create specific document
+//         snprintf(url, sizeof(url), "%s/%s/%s", FIREBASE_URL, collection, document_id);
+//     } else {
+//         // Create document with auto-generated ID
+//         snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
+//     }
+
+//     // Configure HTTP client with increased buffer sizes
+//     esp_http_client_config_t config = {
+//         .url = url,
+//         .event_handler = firebase_http_event_handler,
+//         .method = HTTP_METHOD_POST,
+//         .transport_type = HTTP_TRANSPORT_OVER_SSL,
+//         .cert_pem = firebase_root_cert,
+//         .buffer_size = HTTP_RX_BUFFER_SIZE,     // Increased buffer size
+//         .buffer_size_tx = HTTP_TX_BUFFER_SIZE,  // Increased buffer size
+//         .timeout_ms = 60000,                    // Увеличиваем таймаут до 60 секунд
+//         .keep_alive_enable = true,              // Включаем keep-alive
+//         .skip_cert_common_name_check = true,    // Пропускаем проверку общего имени в сертификате
+//         .port = 443,
+//     };
+
+//     ESP_LOGI(TAG, "Using buffer sizes - RX: %d, TX: %d", HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
+    
+//     esp_http_client_handle_t client = esp_http_client_init(&config);
+//     if (!client) {
+//         ESP_LOGE(TAG, "Failed to initialize HTTP client");
+//         free(firestore_data);
+//         return ESP_FAIL;
+//     }
+
+//     // Set headers
+//     // Используем динамическое выделение памяти для auth_header
+//     size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
+//     char *auth_header = malloc(auth_header_size);
+//     if (auth_header == NULL) {
+//         ESP_LOGE(TAG, "Failed to allocate memory for auth header");
+//         free(firestore_data);
+//         esp_http_client_cleanup(client);
+//         return ESP_ERR_NO_MEM;
+//     }
+    
+//     snprintf(auth_header, auth_header_size, "Bearer %s", jwt_token);
+//     esp_http_client_set_header(client, "Authorization", auth_header);
+//     esp_http_client_set_header(client, "Content-Type", "application/json");
+
+//     // Set request body
+//     esp_http_client_set_post_field(client, firestore_data, strlen(firestore_data));
+
+//     // Perform HTTP request with retry mechanism
+//     esp_err_t err = ESP_FAIL;
+//     for (int retry = 0; retry < MAX_HTTP_RETRIES; retry++) {
+//         err = esp_http_client_perform(client);
+        
+//         if (err == ESP_OK) {
+//             // Успешно, выходим из цикла
+//             break;
+//         }
+        
+//         ESP_LOGW(TAG, "HTTP request failed (attempt %d/%d): %s", 
+//                  retry + 1, MAX_HTTP_RETRIES, esp_err_to_name(err));
+        
+//         if (retry < MAX_HTTP_RETRIES - 1) {
+//             // Ждем перед следующей попыткой (увеличивая время ожидания)
+//             int delay_ms = (retry + 1) * 1000;
+//             ESP_LOGI(TAG, "Retrying in %d ms...", delay_ms);
+//             vTaskDelay(pdMS_TO_TICKS(delay_ms));
+//         }
+//     }
+    
+//     // Освобождаем память auth_header
+//     free(auth_header);
+    
+//     if (err == ESP_OK) {
+//         int status_code = esp_http_client_get_status_code(client);
+//         ESP_LOGI(TAG, "HTTP status code: %d", status_code);
+
+//         if (status_code < 200 || status_code >= 300) {
+//             ESP_LOGE(TAG, "HTTP request failed with status code: %d", status_code);
+//             err = ESP_FAIL;
+//         }
+//     } else {
+//         ESP_LOGE(TAG, "HTTP request failed: %s", esp_err_to_name(err));
+//     }
+
+//     // Clean up
+//     esp_http_client_cleanup(client);
+//     free(firestore_data);
+    
+//     return err;
+// }
+
+// Send pre-formatted Firestore data (без форматирования, т.к. данные уже в формате Firestore)
+esp_err_t firebase_send_firestore_data(const char *collection, const char *document_id, const char *firestore_data) {
     // Check parameters
-    if (!collection || !json_data) {
+    if (!collection || !firestore_data) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Format data for Firestore
-    char *firestore_data = format_firestore_data(json_data);
-    if (firestore_data == NULL) {
-        ESP_LOGE(TAG, "Failed to format data for Firestore");
-        return ESP_FAIL;
-    }
+    // Log input data size
+    ESP_LOGI(TAG, "Input Firestore data size: %zu bytes", strlen(firestore_data));
+    ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", (uint32_t)esp_get_free_heap_size());
     
     // Check and refresh token if needed
     if (!is_token_valid()) {
         ESP_LOGI(TAG, "Token expired or about to expire, generating new token");
         if (create_jwt_token() != ESP_OK) {
             ESP_LOGE(TAG, "Failed to create new JWT token");
-            free(firestore_data);
             return ESP_FAIL;
         }
     }
@@ -288,59 +268,435 @@ esp_err_t firebase_send_data(const char *collection, const char *document_id, co
     // Format URL
     char url[256];
     if (document_id != NULL && strlen(document_id) > 0) {
-        // Update/create specific document
-        snprintf(url, sizeof(url), "%s/%s/%s", FIREBASE_URL, collection, document_id);
+        // Для первого запроса не нужен updateMask - отправляем полный документ
+        // Параметр currentDocument.exists=false гарантирует, что документ будет создан, если его нет
+        snprintf(url, sizeof(url), "%s/%s/%s?currentDocument.exists=false", 
+                FIREBASE_URL, collection, document_id);
     } else {
         // Create document with auto-generated ID
         snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
     }
+    
+    ESP_LOGI(TAG, "Sending Firestore data to URL: %s", url);
 
-    // Configure HTTP client
+    // Выбираем HTTP метод в зависимости от presence document_id
+    esp_http_client_method_t http_method;
+    if (document_id != NULL && strlen(document_id) > 0) {
+        // Для документа с указанным ID используем PATCH (создает или обновляет)
+        http_method = HTTP_METHOD_PATCH;
+        ESP_LOGI(TAG, "Using HTTP PATCH for document with specified ID");
+    } else {
+        // Для автоматически генерируемого ID используем POST
+        http_method = HTTP_METHOD_POST;
+        ESP_LOGI(TAG, "Using HTTP POST for auto-generated document ID");
+    }
+
+    // Configure HTTP client with increased buffer sizes
     esp_http_client_config_t config = {
         .url = url,
         .event_handler = firebase_http_event_handler,
-        .method = HTTP_METHOD_POST,
+        .method = http_method,  // Используем выбранный метод
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .cert_pem = firebase_root_cert,
-        .buffer_size = 2048,
-        .buffer_size_tx = 4096,
-        .timeout_ms = 10000,
+        .buffer_size = HTTP_RX_BUFFER_SIZE,     // Increased buffer size
+        .buffer_size_tx = HTTP_TX_BUFFER_SIZE,  // Increased buffer size
+        .timeout_ms = 30000,                    // Таймаут 30 секунд
+        .keep_alive_enable = true,              // Включаем keep-alive
+        .skip_cert_common_name_check = true,    // Пропускаем проверку общего имени в сертификате
         .port = 443,
+        .use_global_ca_store = false,           // Экономит память
+        .crt_bundle_attach = esp_crt_bundle_attach
     };
 
+    ESP_LOGI(TAG, "HTTP client config - RX buffer: %d, TX buffer: %d", 
+             HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
+    ESP_LOGI(TAG, "Memory before HTTP client init: free heap: %" PRIu32 ", largest block: %" PRIu32,
+             (uint32_t)esp_get_free_heap_size(), 
+             (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) {
+    if (client == NULL) {
         ESP_LOGE(TAG, "Failed to initialize HTTP client");
-        free(firestore_data);
         return ESP_FAIL;
     }
 
     // Set headers
-    char auth_header[4096];
-    snprintf(auth_header, sizeof(auth_header), "Bearer %s", jwt_token);
+    size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
+    char *auth_header = malloc(auth_header_size);
+    if (auth_header == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for auth header");
+        esp_http_client_cleanup(client);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    snprintf(auth_header, auth_header_size, "Bearer %s", jwt_token);
+    esp_http_client_set_header(client, "Authorization", auth_header);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+
+    // Set request body - поскольку firestore_data константный, мы не должны его освобождать
+    esp_http_client_set_post_field(client, firestore_data, strlen(firestore_data));
+
+    // Perform HTTP request with retry mechanism
+    esp_err_t err = ESP_FAIL;
+    for (int retry = 0; retry < MAX_HTTP_RETRIES; retry++) {
+        err = esp_http_client_perform(client);
+        
+        if (err == ESP_OK) {
+            // Успешно, выходим из цикла
+            break;
+        }
+        
+        ESP_LOGW(TAG, "HTTP request failed (attempt %d/%d): %s", 
+                 retry + 1, MAX_HTTP_RETRIES, esp_err_to_name(err));
+        
+        if (retry < MAX_HTTP_RETRIES - 1) {
+            // Ждем перед следующей попыткой (увеличивая время ожидания)
+            int delay_ms = (retry + 1) * 1000;
+            ESP_LOGI(TAG, "Retrying in %d ms...", delay_ms);
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+        }
+    }
+    
+    // Освобождаем память auth_header
+    free(auth_header);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "HTTP POST request failed after %d attempts: %s", 
+                MAX_HTTP_RETRIES, esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        return err;
+    }
+
+    int status_code = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "HTTP status code: %d", status_code);
+
+    // Для кода 400 пытаемся получить тело ответа с ошибкой
+    if (status_code >= 400) {
+        // Получаем тело ответа
+        int content_length = esp_http_client_get_content_length(client);
+        ESP_LOGI(TAG, "Error response length: %d", content_length);
+        
+        if (content_length > 0 && content_length < 2048) {
+            char *response_buffer = malloc(content_length + 1);
+            if (response_buffer) {
+                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
+                if (read_len > 0) {
+                    response_buffer[read_len] = 0; // Null-terminate
+                    ESP_LOGE(TAG, "Error response: %s", response_buffer);
+                }
+                free(response_buffer);
+            }
+        }
+    }
+
+    // Check response
+    if (status_code == 200 || status_code == 201) {
+        ESP_LOGI(TAG, "Firebase data sent successfully");
+        
+        // Получаем тело успешного ответа (для отладки)
+        int content_length = esp_http_client_get_content_length(client);
+        if (content_length > 0 && content_length < 2048) {
+            char *response_buffer = malloc(content_length + 1);
+            if (response_buffer) {
+                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
+                if (read_len > 0) {
+                    response_buffer[read_len] = 0; // Null-terminate
+                    ESP_LOGI(TAG, "Success response (first 200 chars): %.200s%s", 
+                            response_buffer, strlen(response_buffer) > 200 ? "..." : "");
+                }
+                free(response_buffer);
+            }
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to send data. Status code: %d", status_code);
+        err = ESP_FAIL;
+    }
+
+    esp_http_client_cleanup(client);
+    return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
+}
+
+// Вспомогательная функция для отправки по указанному URL с настройками merge
+static esp_err_t firebase_send_to_url(const char *full_url, const char *data) {
+    // Check parameters
+    if (!full_url || !data) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Log input data size
+    ESP_LOGI(TAG, "Input data size: %zu bytes", strlen(data));
+    ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", (uint32_t)esp_get_free_heap_size());
+    ESP_LOGI(TAG, "Sending to URL: %s", full_url);
+    
+    // Check and refresh token if needed
+    if (!is_token_valid()) {
+        ESP_LOGI(TAG, "Token expired or about to expire, generating new token");
+        if (create_jwt_token() != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to create new JWT token");
+            return ESP_FAIL;
+        }
+    }
+
+    // Configure HTTP client
+    esp_http_client_config_t config = {
+        .url = full_url,
+        .event_handler = firebase_http_event_handler,
+        .method = HTTP_METHOD_PATCH,  // Используем PATCH для merge
+        .transport_type = HTTP_TRANSPORT_OVER_SSL,
+        .cert_pem = firebase_root_cert,
+        .buffer_size = HTTP_RX_BUFFER_SIZE,
+        .buffer_size_tx = HTTP_TX_BUFFER_SIZE,
+        .timeout_ms = 30000,                    // Таймаут 30 секунд
+        .keep_alive_enable = true,              // Включаем keep-alive
+        .skip_cert_common_name_check = true,    // Пропускаем проверку общего имени в сертификате
+        .port = 443,
+        .use_global_ca_store = false,           // Экономит память
+        .crt_bundle_attach = esp_crt_bundle_attach
+    };
+
+    ESP_LOGI(TAG, "HTTP client config - RX buffer: %d, TX buffer: %d", 
+             HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
+    ESP_LOGI(TAG, "Memory before HTTP client init: free heap: %" PRIu32 ", largest block: %" PRIu32,
+             (uint32_t)esp_get_free_heap_size(), 
+             (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize HTTP client");
+        return ESP_FAIL;
+    }
+
+    // Set headers
+    size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
+    char *auth_header = malloc(auth_header_size);
+    if (auth_header == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for auth header");
+        esp_http_client_cleanup(client);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    snprintf(auth_header, auth_header_size, "Bearer %s", jwt_token);
     esp_http_client_set_header(client, "Authorization", auth_header);
     esp_http_client_set_header(client, "Content-Type", "application/json");
 
     // Set request body
-    esp_http_client_set_post_field(client, firestore_data, strlen(firestore_data));
+    esp_http_client_set_post_field(client, data, strlen(data));
 
-    // Perform HTTP request
-    esp_err_t err = esp_http_client_perform(client);
-    if (err == ESP_OK) {
-        int status_code = esp_http_client_get_status_code(client);
-        ESP_LOGI(TAG, "HTTP status code: %d", status_code);
+    // Perform HTTP request with retry mechanism
+    esp_err_t err = ESP_FAIL;
+    for (int retry = 0; retry < MAX_HTTP_RETRIES; retry++) {
+        err = esp_http_client_perform(client);
         
-        if (status_code < 200 || status_code >= 300) {
-            ESP_LOGE(TAG, "HTTP request failed with status code: %d", status_code);
-            err = ESP_FAIL;
+        if (err == ESP_OK) {
+            // Успешно, выходим из цикла
+            break;
         }
-    } else {
-        ESP_LOGE(TAG, "HTTP request failed: %s", esp_err_to_name(err));
+        
+        ESP_LOGW(TAG, "HTTP PATCH request failed (attempt %d/%d): %s", 
+                 retry + 1, MAX_HTTP_RETRIES, esp_err_to_name(err));
+        
+        if (retry < MAX_HTTP_RETRIES - 1) {
+            // Ждем перед следующей попыткой
+            int delay_ms = (retry + 1) * 1000;
+            ESP_LOGI(TAG, "Retrying in %d ms...", delay_ms);
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+        }
+    }
+    
+    // Освобождаем память auth_header
+    free(auth_header);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "HTTP PATCH request failed after %d attempts: %s", 
+                MAX_HTTP_RETRIES, esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        return err;
     }
 
-    // Clean up
+    int status_code = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "HTTP status code: %d", status_code);
+
+    // Для кода 400 пытаемся получить тело ответа с ошибкой
+    if (status_code >= 400) {
+        // Получаем тело ответа
+        int content_length = esp_http_client_get_content_length(client);
+        ESP_LOGI(TAG, "Error response length: %d", content_length);
+        
+        if (content_length > 0 && content_length < 2048) {
+            char *response_buffer = malloc(content_length + 1);
+            if (response_buffer) {
+                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
+                if (read_len > 0) {
+                    response_buffer[read_len] = 0; // Null-terminate
+                    ESP_LOGE(TAG, "Error response: %s", response_buffer);
+                }
+                free(response_buffer);
+            }
+        }
+    }
+
+    // Check response
+    if (status_code == 200 || status_code == 201) {
+        ESP_LOGI(TAG, "Firebase data merged successfully");
+        
+        // Получаем тело успешного ответа (для отладки)
+        int content_length = esp_http_client_get_content_length(client);
+        if (content_length > 0 && content_length < 2048) {
+            char *response_buffer = malloc(content_length + 1);
+            if (response_buffer) {
+                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
+                if (read_len > 0) {
+                    response_buffer[read_len] = 0; // Null-terminate
+                    ESP_LOGI(TAG, "Success response (first 200 chars): %.200s%s", 
+                            response_buffer, strlen(response_buffer) > 200 ? "..." : "");
+                }
+                free(response_buffer);
+            }
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to merge data. Status code: %d", status_code);
+        err = ESP_FAIL;
+    }
+
     esp_http_client_cleanup(client);
-    free(firestore_data);
-    
-    return err;
+    return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
 }
+
+// esp_err_t firebase_send_chunked_data(const char *collection, const char *document_id, const char *firestore_data) {
+//     ESP_LOGI(TAG, "Firebase Chunked Data: collection=%s, document_id=%s", 
+//              collection, document_id ? document_id : "NULL (auto-generated)");
+    
+//     // Парсим данные
+//     cJSON *doc = cJSON_Parse(firestore_data);
+
+//     if (!doc) {
+//         ESP_LOGE(TAG, "Failed to parse Firestore data");
+//         return ESP_FAIL;
+//     }
+    
+//     // Найдем массив measurements
+//     cJSON *fields = cJSON_GetObjectItem(doc, "fields");
+//     cJSON *measurements = cJSON_GetObjectItem(fields, "measurements");
+//     cJSON *array_value = cJSON_GetObjectItem(measurements, "arrayValue");
+//     cJSON *values = cJSON_GetObjectItem(array_value, "values");
+    
+//     if (!values || !cJSON_IsArray(values)) {
+//         ESP_LOGE(TAG, "Invalid measurements format");
+//         cJSON_Delete(doc);
+//         return ESP_FAIL;
+//     }
+    
+//     // Определяем общее количество измерений
+//     int total_items = cJSON_GetArraySize(values);
+//     ESP_LOGI(TAG, "Total measurements: %d", total_items);
+    
+//     // Создаем документ с метаданными (без измерений)
+//     cJSON *metadata_doc = cJSON_CreateObject();
+//     cJSON *metadata_fields = cJSON_CreateObject();
+    
+//     // Копируем все поля кроме measurements из исходного документа
+//     cJSON *item = fields->child;
+//     while (item) {
+//         if (strcmp(item->string, "measurements") != 0) {
+//             cJSON_AddItemToObject(metadata_fields, item->string, cJSON_Duplicate(item, 1));
+//         }
+//         item = item->next;
+//     }
+    
+//     // Добавляем поля в итоговый документ
+//     cJSON_AddItemToObject(metadata_doc, "fields", metadata_fields);
+    
+//     // Получаем JSON-строку для метаданных
+//     char *metadata_str = cJSON_PrintUnformatted(metadata_doc);
+//     cJSON_Delete(metadata_doc);
+    
+//     if (metadata_str == NULL) {
+//         ESP_LOGE(TAG, "Failed to create JSON for metadata");
+//         cJSON_Delete(doc);
+//         return ESP_FAIL;
+//     }
+    
+//     ESP_LOGI(TAG, "Metadata chunk (first 200 chars): %.200s%s", 
+//              metadata_str, strlen(metadata_str) > 200 ? "..." : "");
+    
+//     ESP_LOGI(TAG, "Free heap before JSON: %" PRIu32, (uint32_t)esp_get_free_heap_size());
+//     // Отправляем метаданные (первая часть)
+//     ESP_LOGI(TAG, "Sending metadata with document_id=%s", 
+//             document_id ? document_id : "NULL (auto-generated)");
+//     esp_err_t metadata_result = firebase_send_firestore_data(collection, document_id, metadata_str);
+//     free(metadata_str);
+//     ESP_LOGI(TAG, "Free heap after JSON: %" PRIu32, (uint32_t)esp_get_free_heap_size());
+    
+//     if (metadata_result != ESP_OK) {
+//         ESP_LOGE(TAG, "Failed to send metadata: %s", esp_err_to_name(metadata_result));
+//         cJSON_Delete(doc);
+//         return metadata_result;
+//     }
+    
+//     // Делаем паузу перед вторым запросом
+//     vTaskDelay(pdMS_TO_TICKS(1000));
+    
+//     // Теперь отправим все измерения одним запросом
+//     // Убедимся, что document_id не NULL для второго запроса
+//     if (!document_id || strlen(document_id) == 0) {
+//         ESP_LOGE(TAG, "Cannot send measurements without document_id");
+//         cJSON_Delete(doc);
+//         return ESP_FAIL;
+//     }
+    
+//     // Формируем URL для обновления только поля measurements
+//     char measurements_url[300];
+//     snprintf(measurements_url, sizeof(measurements_url), 
+//             "%s/%s/%s?updateMask.fieldPaths=measurements&currentDocument.exists=true", 
+//             FIREBASE_URL, collection, document_id);
+    
+//     ESP_LOGI(TAG, "Sending all measurements to URL: %s", measurements_url);
+    
+//     // Создаем итоговый документ только с измерениями
+//     cJSON *meas_doc = cJSON_CreateObject();
+//     cJSON *meas_fields = cJSON_CreateObject();
+    
+//     // Добавляем поле measurements
+//     cJSON_AddItemToObject(meas_fields, "measurements", cJSON_Duplicate(measurements, 1));
+//     cJSON_AddItemToObject(meas_doc, "fields", meas_fields);
+    
+//     // Сериализуем документ с измерениями
+//     char *meas_str = cJSON_PrintUnformatted(meas_doc);
+//     cJSON_Delete(meas_doc);
+    
+//     if (meas_str == NULL) {
+//         ESP_LOGE(TAG, "Failed to create JSON for measurements");
+//         cJSON_Delete(doc);
+//         return ESP_FAIL;
+//     }
+    
+//     ESP_LOGI(TAG, "Measurements data (first 200 chars): %.200s%s", 
+//              meas_str, strlen(meas_str) > 200 ? "..." : "");
+    
+//     size_t meas_size = strlen(meas_str);
+//     ESP_LOGI(TAG, "Exact measurements size: %zu bytes", meas_size);
+    
+//     if (meas_size > HTTP_TX_BUFFER_SIZE - 1024) { // Оставляем запас 1KB для заголовков
+//         ESP_LOGW(TAG, "Warning: Measurements data size (%zu bytes) is close to buffer limit (%d bytes)",
+//                 meas_size, (int)HTTP_TX_BUFFER_SIZE);
+//     }
+    
+//     // Отправляем все измерения
+//     esp_err_t meas_result = firebase_send_to_url(measurements_url, meas_str);
+//     free(meas_str);
+    
+//     if (meas_result != ESP_OK) {
+//         ESP_LOGE(TAG, "Failed to send measurements: %s", esp_err_to_name(meas_result));
+//         cJSON_Delete(doc);
+//         return meas_result;
+//     }
+    
+//     // Очищаем ресурсы
+//     cJSON_Delete(doc);
+    
+//     ESP_LOGI(TAG, "Largest free block: %" PRIu32, (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    
+//     return ESP_OK;
+// }
+
+

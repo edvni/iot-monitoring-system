@@ -34,8 +34,8 @@
 static const char *TAG = "main";
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 #define SECONDS_IN_MICROS 1000000ULL
-#define SEND_DATA_CYCLE 3  // For testing 3
-#define TRIGGER_INTERVAL    (60 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
+#define SEND_DATA_CYCLE 110  // For testing 3
+#define TRIGGER_INTERVAL    (3 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
 
 static volatile bool data_received = false;  // Flag for data received
 // Safe message initialization
@@ -285,14 +285,14 @@ second_block_init:
         // Getting measurements from storage and sending them
         if (network_initialized) {
             
-            char *measurements = storage_get_measurements();
-            ESP_LOGI(TAG, "Stored data: %s", measurements);
-            if (measurements != NULL) {
-                ret = send_final_measurements_to_firebase(measurements); // Send firebase
-                free(measurements);
+            char *data_to_firebase = storage_get_firestore_measurements();
+            ESP_LOGI(TAG, "Stored firestore data: %s", data_to_firebase);
+            if (data_to_firebase != NULL) {
+                ret = send_final_measurements_to_firebase(data_to_firebase); // Send firebase
                 
                 if (ret == ESP_OK) {
-                    ESP_ERROR_CHECK(storage_clear_measurements());
+                    // ESP_ERROR_CHECK(storage_clear_measurements());
+                    // ESP_ERROR_CHECK(storage_clear_firestore_measurements());
                     ESP_ERROR_CHECK(storage_reset_counter());
                     data_from_storage_sent = true;
                 } else {

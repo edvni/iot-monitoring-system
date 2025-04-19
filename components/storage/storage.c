@@ -1,20 +1,25 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 //#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #include "storage.h"
+#include "sensors.h"
 #include "system_state.h"
+#include "time_manager.h"
+#include "json_helper.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
 #include "esp_spiffs.h" 
-#include "json_helper.h"
 #include "cJSON.h"
 #include <unistd.h>
 #include <sys/stat.h>
 #include "esp_task_wdt.h" 
 #include "esp_timer.h"
+#include <string.h>
+#include <math.h>
 
 #define SECONDS_PER_DAY     86400    // 24 hours * 60 minutes * 60 second
 #define MEASUREMENTS_FILE   "/spiffs/measurements.json"
+#define FIRESTORE_MEASUREMENTS_FILE "/spiffs/firestore_measurements.json"
 #define WDT_TIMEOUT_LONG    30000    // 30 seconds for initialization
 #define WDT_TIMEOUT_SHORT   5000     // 5 seconds for normal operation
 #define BOOT_COUNT_KEY "boot_count"
@@ -117,83 +122,289 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        return ESP_ERR_INVALID_STATE;
    }
 
-   ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
-   struct stat st;
-   if (stat(MEASUREMENTS_FILE, &st) == 0) {
-       ESP_LOGI(TAG, "File exists, size: %ld bytes", st.st_size);
-   } else {
-       ESP_LOGI(TAG, "File does not exist, creating new");
-   }
+//    // 1. Сначала сохраняем в обычном формате для совместимости
+//    ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
+//    struct stat st;
+//    if (stat(MEASUREMENTS_FILE, &st) == 0) {
+//        ESP_LOGI(TAG, "File exists, size: %ld bytes", st.st_size);
+//    } else {
+//        ESP_LOGI(TAG, "File does not exist, creating new");
+//    }
 
-   // Read existing measurements
-   cJSON *measurements_array = NULL;
-   FILE* f = fopen(MEASUREMENTS_FILE, "r");
+//    // Read existing measurements
+//    cJSON *measurements_array = NULL;
+//    FILE* f = fopen(MEASUREMENTS_FILE, "r");
    
+//    if (f != NULL) {
+//        fseek(f, 0, SEEK_END);
+//        long fsize = ftell(f);
+//        fseek(f, 0, SEEK_SET);
+
+//        char *json_str = malloc(fsize + 1);
+//        if (json_str != NULL) {
+//            if (fread(json_str, 1, fsize, f) == (size_t)fsize) {
+//                json_str[fsize] = '\0';
+//                measurements_array = cJSON_Parse(json_str);
+//            }
+//            free(json_str);
+//        }
+//        fclose(f);
+//    }
+
+//    if (measurements_array == NULL) {
+//        measurements_array = cJSON_CreateArray();
+//        if (measurements_array == NULL) {
+//            return ESP_ERR_NO_MEM;
+//        }
+//    }
+
+//    ESP_LOGI(TAG, "Array size before adding: %d", cJSON_GetArraySize(measurements_array));
+
+//    // Add new measurement (using the standard format for compatibility)
+//    cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
+//    if (measurement_obj == NULL || !cJSON_AddItemToArray(measurements_array, measurement_obj)) {
+//        cJSON_Delete(measurements_array);
+//        return ESP_FAIL;
+//    }
+
+//    ESP_LOGI(TAG, "Array size after adding: %d", cJSON_GetArraySize(measurements_array));
+
+//    // Save updated array
+//    char *new_json_str = cJSON_PrintUnformatted(measurements_array);
+//    cJSON_Delete(measurements_array);
+
+//    if (new_json_str == NULL) {
+//        return ESP_ERR_NO_MEM;
+//    }
+
+//    f = fopen(MEASUREMENTS_FILE, "w");
+//    if (f == NULL) {
+//        free(new_json_str);
+//        return ESP_FAIL;
+//    }
+
+//    fprintf(f, "%s", new_json_str);
+//    fclose(f);
+//    free(new_json_str);
+
+   // 2. Теперь сохраняем в формате Firestore
+   ESP_LOGI(TAG, "Saving in Firestore format to: %s", FIRESTORE_MEASUREMENTS_FILE);
+   
+   // Для Firestore нам нужно сохранить документ с полями
+   cJSON *firestore_doc = NULL;
+   cJSON *firestore_fields = NULL;
+   cJSON *measurements_field = NULL;
+   cJSON *array_value = NULL;
+   cJSON *values_array = NULL;
+   
+   // Проверяем, существует ли уже файл с Firestore структурой
+   FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
    if (f != NULL) {
+       // Если файл существует, загружаем структуру
        fseek(f, 0, SEEK_END);
        long fsize = ftell(f);
        fseek(f, 0, SEEK_SET);
 
-       char *json_str = malloc(fsize + 1);
-       if (json_str != NULL) {
-           if (fread(json_str, 1, fsize, f) == (size_t)fsize) {
-               json_str[fsize] = '\0';
-               measurements_array = cJSON_Parse(json_str);
+       if (fsize > 0) {
+           char *firestore_str = malloc(fsize + 1);
+           if (firestore_str != NULL) {
+               if (fread(firestore_str, 1, fsize, f) == (size_t)fsize) {
+                   firestore_str[fsize] = '\0';
+                   firestore_doc = cJSON_Parse(firestore_str);
+               }
+               free(firestore_str);
            }
-           free(json_str);
        }
        fclose(f);
    }
-
-   if (measurements_array == NULL) {
-       measurements_array = cJSON_CreateArray();
-       if (measurements_array == NULL) {
-           return ESP_ERR_NO_MEM;
+   
+   if (firestore_doc == NULL) {
+       // Если файл не существует или пустой, создаем новую структуру
+       firestore_doc = cJSON_CreateObject();
+       firestore_fields = cJSON_CreateObject();
+       
+       // Добавляем tag_id (MAC адрес) как поле
+       cJSON *tag_id_field = cJSON_CreateObject();
+       cJSON_AddStringToObject(tag_id_field, "stringValue", measurement->mac_address);
+       cJSON_AddItemToObject(firestore_fields, "tag_id", tag_id_field);
+       
+       // Добавляем текущую дату как поле
+       char time_str[32];
+       if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
+           strcpy(time_str, "Time not available");
+       }
+       
+       // Извлекаем только дату (первые 10 символов)
+       char day[11] = {0}; // YYYY-MM-DD\0
+       strncpy(day, time_str, 10);
+       day[10] = '\0';
+       
+       cJSON *day_field = cJSON_CreateObject();
+       cJSON_AddStringToObject(day_field, "stringValue", day);
+       cJSON_AddItemToObject(firestore_fields, "day", day_field);
+       
+       // Создаем массив measurements
+       measurements_field = cJSON_CreateObject();
+       array_value = cJSON_CreateObject();
+       values_array = cJSON_CreateArray();
+       
+       cJSON_AddItemToObject(array_value, "values", values_array);
+       cJSON_AddItemToObject(measurements_field, "arrayValue", array_value);
+       cJSON_AddItemToObject(firestore_fields, "measurements", measurements_field);
+       
+       // Добавляем поля к корневому объекту
+       cJSON_AddItemToObject(firestore_doc, "fields", firestore_fields);
+   } else {
+       // Если структура уже существует, извлекаем массив measurements
+       firestore_fields = cJSON_GetObjectItem(firestore_doc, "fields");
+       if (!firestore_fields) {
+           ESP_LOGE(TAG, "Invalid Firestore format: missing fields object");
+           cJSON_Delete(firestore_doc);
+           return ESP_FAIL;
+       }
+       
+       measurements_field = cJSON_GetObjectItem(firestore_fields, "measurements");
+       if (!measurements_field) {
+           ESP_LOGE(TAG, "Invalid Firestore format: missing measurements field");
+           cJSON_Delete(firestore_doc);
+           return ESP_FAIL;
+       }
+       
+       array_value = cJSON_GetObjectItem(measurements_field, "arrayValue");
+       if (!array_value) {
+           ESP_LOGE(TAG, "Invalid Firestore format: missing arrayValue");
+           cJSON_Delete(firestore_doc);
+           return ESP_FAIL;
+       }
+       
+       values_array = cJSON_GetObjectItem(array_value, "values");
+       if (!values_array) {
+           ESP_LOGE(TAG, "Invalid Firestore format: missing values array");
+           cJSON_Delete(firestore_doc);
+           return ESP_FAIL;
        }
    }
-
-   ESP_LOGI(TAG, "Array size before adding: %d", cJSON_GetArraySize(measurements_array));
-
-   // Add new measurement
-   cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
-   if (measurement_obj == NULL || !cJSON_AddItemToArray(measurements_array, measurement_obj)) {
-       cJSON_Delete(measurements_array);
-       return ESP_FAIL;
+   
+   // Теперь добавляем новое измерение в Firestore формате
+   char time_str[32];
+   if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
+       strcpy(time_str, "Time not available");
    }
+   
+   // Извлекаем только время (последние 8 символов, если доступно)
+   char timestamp[9] = {0};
+   if (strlen(time_str) >= 19) {
+       strncpy(timestamp, time_str + 11, 8);
+       timestamp[8] = '\0';
+   } else {
+       strncpy(timestamp, time_str, 8);
+       timestamp[8] = '\0';
+   }
+   
+   // Создаем объект для измерения
+   cJSON *measurement_map_obj = cJSON_CreateObject();
+   cJSON *measurement_map_value = cJSON_CreateObject();
+   cJSON *measurement_map_fields = cJSON_CreateObject();
+   
+   // Добавляем поля температуры, влажности и времени
+   
+   // Температура
+   cJSON *temp_field = cJSON_CreateObject();
+   float rounded_temp = roundf(measurement->temperature * 100) / 100;
+   char temp_str[10];
+   sprintf(temp_str, "%.2f", rounded_temp);
+   cJSON_AddStringToObject(temp_field, "stringValue", temp_str);
+   cJSON_AddItemToObject(measurement_map_fields, "t", temp_field);
+   
+   // Влажность
+   cJSON *hum_field = cJSON_CreateObject();
+   float rounded_hum = roundf(measurement->humidity * 100) / 100;
+   char hum_str[10];
+   sprintf(hum_str, "%.2f", rounded_hum);
+   cJSON_AddStringToObject(hum_field, "stringValue", hum_str);
+   cJSON_AddItemToObject(measurement_map_fields, "h", hum_field);
+   
+   // Временная метка
+   cJSON *timestamp_field = cJSON_CreateObject();
+   cJSON_AddStringToObject(timestamp_field, "stringValue", timestamp);
+   cJSON_AddItemToObject(measurement_map_fields, "ts", timestamp_field);
+   
+   // Добавляем в структуру
+   cJSON_AddItemToObject(measurement_map_value, "fields", measurement_map_fields);
+   cJSON_AddItemToObject(measurement_map_obj, "mapValue", measurement_map_value);
+   cJSON_AddItemToArray(values_array, measurement_map_obj);
 
-   ESP_LOGI(TAG, "Array size after adding: %d", cJSON_GetArraySize(measurements_array));
-
-   // Save updated array
-   char *new_json_str = cJSON_PrintUnformatted(measurements_array);
-   cJSON_Delete(measurements_array);
-
-   if (new_json_str == NULL) {
+   // Выводим длину массива
+   ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values_array));
+   
+   // Сохраняем обновленную Firestore структуру
+   char *firestore_json_str = cJSON_PrintUnformatted(firestore_doc);
+   cJSON_Delete(firestore_doc);
+   
+   if (firestore_json_str == NULL) {
        return ESP_ERR_NO_MEM;
    }
-
-   f = fopen(MEASUREMENTS_FILE, "w");
+   
+   f = fopen(FIRESTORE_MEASUREMENTS_FILE, "w");
    if (f == NULL) {
-       free(new_json_str);
+       free(firestore_json_str);
        return ESP_FAIL;
    }
-
-   fprintf(f, "%s", new_json_str);
+   
+   fprintf(f, "%s", firestore_json_str);
    fclose(f);
-   // ESP_LOGI(TAG, "Saved data: %s", new_json_str);
-   free(new_json_str);
-
-   // Verify file
-   f = fopen(MEASUREMENTS_FILE, "r");
-   if (f != NULL) {
-       fseek(f, 0, SEEK_END);
-       long size = ftell(f);
-       fclose(f);
-       ESP_LOGI(TAG, "File verification: size = %ld bytes", size);
+   free(firestore_json_str);
+   
+//    // Проверка файлов
+//    struct stat st_normal, st_firestore;
+//    if (stat(MEASUREMENTS_FILE, &st_normal) == 0 && stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
+//        ESP_LOGI(TAG, "Files saved - Normal: %ld bytes, Firestore: %ld bytes", 
+//                 st_normal.st_size, st_firestore.st_size);
+//    } else {
+//        ESP_LOGE(TAG, "File verification failed!");
+//    }
+   // Проверка файлов
+   struct stat st_firestore;
+   if (stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
+       ESP_LOGI(TAG, "Files saved - Firestore: %ld bytes", st_firestore.st_size);
    } else {
        ESP_LOGE(TAG, "File verification failed!");
    }
 
    return ESP_OK;
+}
+
+// Getting the Firestore-formatted measurements from SPIFFS
+char* storage_get_firestore_measurements(void) {
+   if (!check_spiffs_status()) {
+       return NULL;
+   }
+
+   FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
+   if (f == NULL) {
+       ESP_LOGE(TAG, "No Firestore measurements file found");
+       return NULL;
+   }
+
+   fseek(f, 0, SEEK_END);
+   long fsize = ftell(f);
+   fseek(f, 0, SEEK_SET);
+
+   char *json_str = malloc(fsize + 1);
+   if (json_str == NULL) {
+       fclose(f);
+       return NULL;
+   }
+
+   if (fread(json_str, 1, fsize, f) != (size_t)fsize) {
+       free(json_str);
+       fclose(f);
+       return NULL;
+   }
+
+   fclose(f);
+   json_str[fsize] = '\0';
+   return json_str;
 }
 
 // Getting the measurements from SPIFFS
@@ -232,6 +443,10 @@ char* storage_get_measurements(void) {
 // Cleaning the measurements from SPIFFS
 esp_err_t storage_clear_measurements(void) {
    return check_spiffs_status() ? unlink(MEASUREMENTS_FILE) : ESP_ERR_INVALID_STATE;
+}
+// Cleaning the measurements from SPIFFS
+esp_err_t storage_clear_firestore_measurements(void) {
+   return check_spiffs_status() ? unlink(FIRESTORE_MEASUREMENTS_FILE) : ESP_ERR_INVALID_STATE;
 }
 
 // Storaging the logs in SPIFFS

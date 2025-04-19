@@ -62,6 +62,13 @@ char* storage_get_measurements(void);
  */
 esp_err_t storage_clear_measurements(void);
 
+/**
+ * @brief Clear the firestore measurements from SPIFFS
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_clear_firestore_measurements(void);
+
 
 
 /**
@@ -146,6 +153,14 @@ bool storage_is_first_boot(void);
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t storage_mark_first_boot_completed(void);
+
+
+/**
+ * @brief Get the stored measurements as a Firestore-formatted JSON string
+ * 
+ * @return char* Firestore-formatted JSON string of measurements (must be freed by caller), NULL on error
+ */
+char* storage_get_firestore_measurements(void);
 
 #ifdef __cplusplus
 }
