@@ -24,8 +24,15 @@
 #define ESP_TLS_VER_TLS_1_2 0x0303 /* TLS 1.2 */
 #define ESP_TLS_VER_TLS_1_3 0x0304 /* TLS 1.3 */
 #define HTTP_RX_BUFFER_SIZE 8192    // Increased from 2048
-#define HTTP_TX_BUFFER_SIZE 17408   // Increased from 4096 to 64K
+#define HTTP_TX_BUFFER_SIZE 13824  // Increased from 4096 to 64K
 #define MAX_HTTP_RETRIES 3         // Максимальное количество повторных попыток
+
+// Буфер для разбивки JSON на части
+#define STREAM_CHUNK_SIZE 2048
+static char stream_buffer[STREAM_CHUNK_SIZE];
+static const char *current_json_data = NULL;
+static size_t json_data_len = 0;
+static size_t json_data_pos = 0;
 
 static const char *TAG = "firebase_api";
 
@@ -562,141 +569,96 @@ static esp_err_t firebase_send_to_url(const char *full_url, const char *data) {
     return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
 }
 
-// esp_err_t firebase_send_chunked_data(const char *collection, const char *document_id, const char *firestore_data) {
-//     ESP_LOGI(TAG, "Firebase Chunked Data: collection=%s, document_id=%s", 
-//              collection, document_id ? document_id : "NULL (auto-generated)");
+// Провайдер содержимого для потоковой передачи
+static esp_err_t json_data_provider(void *buffer, size_t offset, size_t len, void *arg)
+{
+    if (current_json_data == NULL || json_data_len == 0 || json_data_pos >= json_data_len) {
+        return ESP_FAIL;
+    }
     
-//     // Парсим данные
-//     cJSON *doc = cJSON_Parse(firestore_data);
+    size_t remaining = json_data_len - json_data_pos;
+    size_t copy_len = (len < remaining) ? len : remaining;
+    
+    memcpy(buffer, current_json_data + json_data_pos, copy_len);
+    json_data_pos += copy_len;
+    
+    ESP_LOGI(TAG, "Отправлено %zu байт, позиция %zu из %zu", 
+             copy_len, json_data_pos, json_data_len);
+    
+    return ESP_OK;
+}
 
-//     if (!doc) {
-//         ESP_LOGE(TAG, "Failed to parse Firestore data");
-//         return ESP_FAIL;
-//     }
+// Упрощенная версия без провайдера данных
+esp_err_t firebase_send_streamed_data(const char *collection, const char *document_id, const char *firestore_data) {
+    // Проверка аргументов
+    if (!collection || !firestore_data) {
+        return ESP_ERR_INVALID_ARG;
+    }
     
-//     // Найдем массив measurements
-//     cJSON *fields = cJSON_GetObjectItem(doc, "fields");
-//     cJSON *measurements = cJSON_GetObjectItem(fields, "measurements");
-//     cJSON *array_value = cJSON_GetObjectItem(measurements, "arrayValue");
-//     cJSON *values = cJSON_GetObjectItem(array_value, "values");
+    // Размер JSON данных
+    size_t data_size = strlen(firestore_data);
+    ESP_LOGI(TAG, "Общий размер данных: %zu байт", data_size);
     
-//     if (!values || !cJSON_IsArray(values)) {
-//         ESP_LOGE(TAG, "Invalid measurements format");
-//         cJSON_Delete(doc);
-//         return ESP_FAIL;
-//     }
+    // Проверка токена
+    if (!is_token_valid()) {
+        if (create_jwt_token() != ESP_OK) {
+            return ESP_FAIL;
+        }
+    }
     
-//     // Определяем общее количество измерений
-//     int total_items = cJSON_GetArraySize(values);
-//     ESP_LOGI(TAG, "Total measurements: %d", total_items);
+    // Формирование URL
+    char url[256];
+    if (document_id && strlen(document_id) > 0) {
+        snprintf(url, sizeof(url), "%s/%s/%s", FIREBASE_URL, collection, document_id);
+    } else {
+        snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
+    }
     
-//     // Создаем документ с метаданными (без измерений)
-//     cJSON *metadata_doc = cJSON_CreateObject();
-//     cJSON *metadata_fields = cJSON_CreateObject();
+    // Метод HTTP
+    esp_http_client_method_t http_method = (document_id && strlen(document_id) > 0) ? 
+                                         HTTP_METHOD_PATCH : HTTP_METHOD_POST;
     
-//     // Копируем все поля кроме measurements из исходного документа
-//     cJSON *item = fields->child;
-//     while (item) {
-//         if (strcmp(item->string, "measurements") != 0) {
-//             cJSON_AddItemToObject(metadata_fields, item->string, cJSON_Duplicate(item, 1));
-//         }
-//         item = item->next;
-//     }
+    // Конфигурация клиента с маленькими буферами
+    esp_http_client_config_t config = {
+        .url = url,
+        .event_handler = firebase_http_event_handler,
+        .method = http_method,
+        .transport_type = HTTP_TRANSPORT_OVER_SSL,
+        .cert_pem = firebase_root_cert,
+        .buffer_size = 4096,        // Маленький RX буфер
+        .buffer_size_tx = 4096,     // Маленький TX буфер
+        .timeout_ms = 60000,        // Больший таймаут
+        .crt_bundle_attach = esp_crt_bundle_attach
+    };
     
-//     // Добавляем поля в итоговый документ
-//     cJSON_AddItemToObject(metadata_doc, "fields", metadata_fields);
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) return ESP_FAIL;
     
-//     // Получаем JSON-строку для метаданных
-//     char *metadata_str = cJSON_PrintUnformatted(metadata_doc);
-//     cJSON_Delete(metadata_doc);
+    // Выделяем память для auth_header в куче, а не на стеке
+    size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
+    char *auth_header = malloc(auth_header_size);
+    if (!auth_header) {
+        esp_http_client_cleanup(client);
+        return ESP_ERR_NO_MEM;
+    }
     
-//     if (metadata_str == NULL) {
-//         ESP_LOGE(TAG, "Failed to create JSON for metadata");
-//         cJSON_Delete(doc);
-//         return ESP_FAIL;
-//     }
+    snprintf(auth_header, auth_header_size, "Bearer %s", jwt_token);
+    esp_http_client_set_header(client, "Authorization", auth_header);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
     
-//     ESP_LOGI(TAG, "Metadata chunk (first 200 chars): %.200s%s", 
-//              metadata_str, strlen(metadata_str) > 200 ? "..." : "");
+    // Установка данных напрямую
+    esp_http_client_set_post_field(client, firestore_data, data_size);
     
-//     ESP_LOGI(TAG, "Free heap before JSON: %" PRIu32, (uint32_t)esp_get_free_heap_size());
-//     // Отправляем метаданные (первая часть)
-//     ESP_LOGI(TAG, "Sending metadata with document_id=%s", 
-//             document_id ? document_id : "NULL (auto-generated)");
-//     esp_err_t metadata_result = firebase_send_firestore_data(collection, document_id, metadata_str);
-//     free(metadata_str);
-//     ESP_LOGI(TAG, "Free heap after JSON: %" PRIu32, (uint32_t)esp_get_free_heap_size());
+    // Запрос
+    esp_err_t err = esp_http_client_perform(client);
+    int status_code = (err == ESP_OK) ? esp_http_client_get_status_code(client) : 0;
     
-//     if (metadata_result != ESP_OK) {
-//         ESP_LOGE(TAG, "Failed to send metadata: %s", esp_err_to_name(metadata_result));
-//         cJSON_Delete(doc);
-//         return metadata_result;
-//     }
+    ESP_LOGI(TAG, "HTTP статус: %d, результат: %s", 
+             status_code, (err == ESP_OK) ? "OK" : esp_err_to_name(err));
     
-//     // Делаем паузу перед вторым запросом
-//     vTaskDelay(pdMS_TO_TICKS(1000));
+    // Освобождаем память
+    free(auth_header);
+    esp_http_client_cleanup(client);
     
-//     // Теперь отправим все измерения одним запросом
-//     // Убедимся, что document_id не NULL для второго запроса
-//     if (!document_id || strlen(document_id) == 0) {
-//         ESP_LOGE(TAG, "Cannot send measurements without document_id");
-//         cJSON_Delete(doc);
-//         return ESP_FAIL;
-//     }
-    
-//     // Формируем URL для обновления только поля measurements
-//     char measurements_url[300];
-//     snprintf(measurements_url, sizeof(measurements_url), 
-//             "%s/%s/%s?updateMask.fieldPaths=measurements&currentDocument.exists=true", 
-//             FIREBASE_URL, collection, document_id);
-    
-//     ESP_LOGI(TAG, "Sending all measurements to URL: %s", measurements_url);
-    
-//     // Создаем итоговый документ только с измерениями
-//     cJSON *meas_doc = cJSON_CreateObject();
-//     cJSON *meas_fields = cJSON_CreateObject();
-    
-//     // Добавляем поле measurements
-//     cJSON_AddItemToObject(meas_fields, "measurements", cJSON_Duplicate(measurements, 1));
-//     cJSON_AddItemToObject(meas_doc, "fields", meas_fields);
-    
-//     // Сериализуем документ с измерениями
-//     char *meas_str = cJSON_PrintUnformatted(meas_doc);
-//     cJSON_Delete(meas_doc);
-    
-//     if (meas_str == NULL) {
-//         ESP_LOGE(TAG, "Failed to create JSON for measurements");
-//         cJSON_Delete(doc);
-//         return ESP_FAIL;
-//     }
-    
-//     ESP_LOGI(TAG, "Measurements data (first 200 chars): %.200s%s", 
-//              meas_str, strlen(meas_str) > 200 ? "..." : "");
-    
-//     size_t meas_size = strlen(meas_str);
-//     ESP_LOGI(TAG, "Exact measurements size: %zu bytes", meas_size);
-    
-//     if (meas_size > HTTP_TX_BUFFER_SIZE - 1024) { // Оставляем запас 1KB для заголовков
-//         ESP_LOGW(TAG, "Warning: Measurements data size (%zu bytes) is close to buffer limit (%d bytes)",
-//                 meas_size, (int)HTTP_TX_BUFFER_SIZE);
-//     }
-    
-//     // Отправляем все измерения
-//     esp_err_t meas_result = firebase_send_to_url(measurements_url, meas_str);
-//     free(meas_str);
-    
-//     if (meas_result != ESP_OK) {
-//         ESP_LOGE(TAG, "Failed to send measurements: %s", esp_err_to_name(meas_result));
-//         cJSON_Delete(doc);
-//         return meas_result;
-//     }
-    
-//     // Очищаем ресурсы
-//     cJSON_Delete(doc);
-    
-//     ESP_LOGI(TAG, "Largest free block: %" PRIu32, (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-    
-//     return ESP_OK;
-// }
-
-
+    return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
+}

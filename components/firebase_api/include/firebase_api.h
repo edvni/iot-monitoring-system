@@ -67,4 +67,14 @@ esp_err_t send_final_measurements_to_firebase(const char *measurements);
  */
 // esp_err_t firebase_send_chunked_data(const char *collection, const char *document_id, const char *firestore_data);
 
+/**
+ * @brief Send streamed data to Firestore
+ * 
+ * @param collection Firestore collection name
+ * @param document_id Document ID (if NULL, will be auto-generated)
+ * @param firestore_data Data already formatted for Firestore
+ * @return esp_err_t ESP_OK on success, error code otherwise
+ */
+esp_err_t firebase_send_streamed_data(const char *collection, const char *document_id, const char *firestore_data);
+
 #endif /* FIREBASE_API_H */
