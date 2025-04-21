@@ -21,6 +21,10 @@ static const char *TAG = "FIREBASE_TASKS";
 // Increased JSON buffer size to handle large data
 #define FIRESTORE_MEASUREMENTS_FILE "/spiffs/firestore_measurements.json"
 
+// IMPORTANT: Set 1 for automatic generation of ID from Firestore
+// Set 0 for using ID based on current date
+#define USE_AUTO_ID 0
+
 // Main function for sending final measurements to Firebase
 esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
 
@@ -29,7 +33,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     ESP_LOGI(TAG, "Retrieved Firestore data, size: %zu bytes", data_size);
     ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", esp_get_free_heap_size());
     
-    // Проверим, что данные корректные
+    // Check if data is correct
     cJSON *firestore_doc = cJSON_Parse(firestore_data);
     if (!firestore_doc) {
         ESP_LOGE(TAG, "Invalid Firestore format: parse error");
@@ -37,7 +41,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
         return ESP_FAIL;
     }
     
-    // Извлечем MAC для использования в ID документа
+    // Extract MAC for use in document ID
     cJSON *fields = cJSON_GetObjectItem(firestore_doc, "fields");
     if (!fields) {
         ESP_LOGE(TAG, "Invalid Firestore format: missing fields");
@@ -78,9 +82,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
         return ESP_FAIL;
     }
 
-    // ВАЖНО: Установите 1 для автоматической генерации ID от Firestore
-    // Установите 0 для использования ID на основе текущей даты
-    #define USE_AUTO_ID 0
+
     
     esp_err_t result;
     
@@ -89,16 +91,16 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
         //result = firebase_send_firestore_data("daily_measurements", NULL, firestore_data);
         result = firebase_send_streamed_data("daily_measurements", NULL, firestore_data);
     } else {
-        // Генерируем ID документа на основе текущей даты
-        static char doc_id[32]; // увеличиваем буфер для безопасности
+        // Generate document ID based on current date
+        static char doc_id[32]; 
         
-        // Получаем текущее время
+        // Get current time
         time_t now;
         struct tm timeinfo;
         time(&now);
         localtime_r(&now, &timeinfo);
         
-        // Форматируем в виде YYYY-MM-DD
+        // Format in YYYY-MM-DD format
         strftime(doc_id, sizeof(doc_id), "%Y-%m-%d", &timeinfo);
         
         ESP_LOGI(TAG, "Using custom document ID: %s", doc_id);
@@ -106,13 +108,13 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
         result = firebase_send_streamed_data("daily_measurements", doc_id, firestore_data);
     }
     
-    // Освобождаем ресурсы
+    // Release resources
     cJSON_Delete(firestore_doc);
     free(firestore_data);
     
-    // Проверяем результат отправки
+    // Check result of sending
     if (result == ESP_OK) {
-        // Удаляем только файл Firestore-формата, очистку измерений будет выполнять main.c
+        // Remove only Firestore-format file, cleaning measurements will be done by main.c
         unlink(FIRESTORE_MEASUREMENTS_FILE);
         ESP_LOGI(TAG, "Measurements sent successfully");
     } else {

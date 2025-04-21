@@ -23,9 +23,9 @@
 
 #define ESP_TLS_VER_TLS_1_2 0x0303 /* TLS 1.2 */
 #define ESP_TLS_VER_TLS_1_3 0x0304 /* TLS 1.3 */
-#define HTTP_RX_BUFFER_SIZE 8192    // Increased from 2048
-#define HTTP_TX_BUFFER_SIZE 13824  // Increased from 4096 to 64K
-#define MAX_HTTP_RETRIES 3         // Максимальное количество повторных попыток
+#define HTTP_RX_BUFFER_SIZE 8192   
+#define HTTP_TX_BUFFER_SIZE 13824  
+#define MAX_HTTP_RETRIES 3         // Maximum number of retry attempts
 
 // Буфер для разбивки JSON на части
 #define STREAM_CHUNK_SIZE 2048
@@ -113,7 +113,7 @@ esp_err_t firebase_init(void) {
         return ESP_FAIL;
     }
 
-    // Включаем отладочный вывод TLS
+    // Enable TLS debug logging
     esp_log_level_set("esp-tls", ESP_LOG_DEBUG);
     esp_log_level_set("esp-tls-mbedtls", ESP_LOG_DEBUG);
     ESP_LOGI(TAG, "TLS debug logging enabled");
@@ -129,30 +129,23 @@ esp_err_t firebase_init(void) {
     return ESP_OK;
 }
 
-// // Send data to Firestore
-// esp_err_t firebase_send_data(const char *collection, const char *document_id, const char *json_data) {
+
+// Send pre-formatted Firestore data (without formatting, since data is already in Firestore format)
+// esp_err_t firebase_send_firestore_data(const char *collection, const char *document_id, const char *firestore_data) {
 //     // Check parameters
-//     if (!collection || !json_data) {
+//     if (!collection || !firestore_data) {
 //         return ESP_ERR_INVALID_ARG;
 //     }
 
 //     // Log input data size
-//     ESP_LOGI(TAG, "Input JSON size: %d bytes", strlen(json_data));
-//     ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", esp_get_free_heap_size());
-
-//     // Format data for Firestore
-//     char *firestore_data = format_firestore_data(json_data);
-//     if (firestore_data == NULL) {
-//         ESP_LOGE(TAG, "Failed to format data for Firestore");
-//         return ESP_FAIL;
-//     }
+//     ESP_LOGI(TAG, "Input Firestore data size: %zu bytes", strlen(firestore_data));
+//     ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", (uint32_t)esp_get_free_heap_size());
     
 //     // Check and refresh token if needed
 //     if (!is_token_valid()) {
 //         ESP_LOGI(TAG, "Token expired or about to expire, generating new token");
 //         if (create_jwt_token() != ESP_OK) {
 //             ESP_LOGE(TAG, "Failed to create new JWT token");
-//             free(firestore_data);
 //             return ESP_FAIL;
 //         }
 //     }
@@ -160,44 +153,63 @@ esp_err_t firebase_init(void) {
 //     // Format URL
 //     char url[256];
 //     if (document_id != NULL && strlen(document_id) > 0) {
-//         // Update/create specific document
-//         snprintf(url, sizeof(url), "%s/%s/%s", FIREBASE_URL, collection, document_id);
+//         // For first request no need for updateMask - send full document
+//         // Parameter currentDocument.exists=false guarantees that document will be created if it doesn't exist
+//         snprintf(url, sizeof(url), "%s/%s/%s?currentDocument.exists=false", 
+//                 FIREBASE_URL, collection, document_id);
 //     } else {
 //         // Create document with auto-generated ID
 //         snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
+//     }
+    
+//     ESP_LOGI(TAG, "Sending Firestore data to URL: %s", url);
+
+//     // Select HTTP method depending on presence of document_id
+//     esp_http_client_method_t http_method;
+//     if (document_id != NULL && strlen(document_id) > 0) {
+//         // For document with specified ID use PATCH (creates or updates)
+//         http_method = HTTP_METHOD_PATCH;
+//         ESP_LOGI(TAG, "Using HTTP PATCH for document with specified ID");
+//     } else {
+//         // For auto-generated ID use POST
+//         http_method = HTTP_METHOD_POST;
+//         ESP_LOGI(TAG, "Using HTTP POST for auto-generated document ID");
 //     }
 
 //     // Configure HTTP client with increased buffer sizes
 //     esp_http_client_config_t config = {
 //         .url = url,
 //         .event_handler = firebase_http_event_handler,
-//         .method = HTTP_METHOD_POST,
+//         .method = http_method,  
 //         .transport_type = HTTP_TRANSPORT_OVER_SSL,
 //         .cert_pem = firebase_root_cert,
-//         .buffer_size = HTTP_RX_BUFFER_SIZE,     // Increased buffer size
-//         .buffer_size_tx = HTTP_TX_BUFFER_SIZE,  // Increased buffer size
-//         .timeout_ms = 60000,                    // Увеличиваем таймаут до 60 секунд
-//         .keep_alive_enable = true,              // Включаем keep-alive
-//         .skip_cert_common_name_check = true,    // Пропускаем проверку общего имени в сертификате
+//         .buffer_size = HTTP_RX_BUFFER_SIZE,     
+//         .buffer_size_tx = HTTP_TX_BUFFER_SIZE,  
+//         .timeout_ms = 30000,                    
+//         .keep_alive_enable = true,              
+//         .skip_cert_common_name_check = true,    
 //         .port = 443,
+//         .use_global_ca_store = false,           
+//         .crt_bundle_attach = esp_crt_bundle_attach
 //     };
 
-//     ESP_LOGI(TAG, "Using buffer sizes - RX: %d, TX: %d", HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
-    
+//     ESP_LOGI(TAG, "HTTP client config - RX buffer: %d, TX buffer: %d", 
+//              HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
+//     ESP_LOGI(TAG, "Memory before HTTP client init: free heap: %" PRIu32 ", largest block: %" PRIu32,
+//              (uint32_t)esp_get_free_heap_size(), 
+//              (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
 //     esp_http_client_handle_t client = esp_http_client_init(&config);
-//     if (!client) {
+//     if (client == NULL) {
 //         ESP_LOGE(TAG, "Failed to initialize HTTP client");
-//         free(firestore_data);
 //         return ESP_FAIL;
 //     }
 
 //     // Set headers
-//     // Используем динамическое выделение памяти для auth_header
 //     size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
 //     char *auth_header = malloc(auth_header_size);
 //     if (auth_header == NULL) {
 //         ESP_LOGE(TAG, "Failed to allocate memory for auth header");
-//         free(firestore_data);
 //         esp_http_client_cleanup(client);
 //         return ESP_ERR_NO_MEM;
 //     }
@@ -206,7 +218,7 @@ esp_err_t firebase_init(void) {
 //     esp_http_client_set_header(client, "Authorization", auth_header);
 //     esp_http_client_set_header(client, "Content-Type", "application/json");
 
-//     // Set request body
+//     // Set request body - since firestore_data is constant, we shouldn't free it
 //     esp_http_client_set_post_field(client, firestore_data, strlen(firestore_data));
 
 //     // Perform HTTP request with retry mechanism
@@ -215,7 +227,6 @@ esp_err_t firebase_init(void) {
 //         err = esp_http_client_perform(client);
         
 //         if (err == ESP_OK) {
-//             // Успешно, выходим из цикла
 //             break;
 //         }
         
@@ -223,390 +234,94 @@ esp_err_t firebase_init(void) {
 //                  retry + 1, MAX_HTTP_RETRIES, esp_err_to_name(err));
         
 //         if (retry < MAX_HTTP_RETRIES - 1) {
-//             // Ждем перед следующей попыткой (увеличивая время ожидания)
+//             // Wait before next attempt (increasing waiting time)
 //             int delay_ms = (retry + 1) * 1000;
 //             ESP_LOGI(TAG, "Retrying in %d ms...", delay_ms);
 //             vTaskDelay(pdMS_TO_TICKS(delay_ms));
 //         }
 //     }
     
-//     // Освобождаем память auth_header
+//     // Free memory auth_header
 //     free(auth_header);
     
-//     if (err == ESP_OK) {
-//         int status_code = esp_http_client_get_status_code(client);
-//         ESP_LOGI(TAG, "HTTP status code: %d", status_code);
-
-//         if (status_code < 200 || status_code >= 300) {
-//             ESP_LOGE(TAG, "HTTP request failed with status code: %d", status_code);
-//             err = ESP_FAIL;
-//         }
-//     } else {
-//         ESP_LOGE(TAG, "HTTP request failed: %s", esp_err_to_name(err));
+//     if (err != ESP_OK) {
+//         ESP_LOGE(TAG, "HTTP POST request failed after %d attempts: %s", 
+//                 MAX_HTTP_RETRIES, esp_err_to_name(err));
+//         esp_http_client_cleanup(client);
+//         return err;
 //     }
 
-//     // Clean up
+//     int status_code = esp_http_client_get_status_code(client);
+//     ESP_LOGI(TAG, "HTTP status code: %d", status_code);
+
+//     // For code 400, try to get response body with error
+//     if (status_code >= 400) {
+//         // Get response body
+//         int content_length = esp_http_client_get_content_length(client);
+//         ESP_LOGI(TAG, "Error response length: %d", content_length);
+        
+//         if (content_length > 0 && content_length < 2048) {
+//             char *response_buffer = malloc(content_length + 1);
+//             if (response_buffer) {
+//                 int read_len = esp_http_client_read_response(client, response_buffer, content_length);
+//                 if (read_len > 0) {
+//                     response_buffer[read_len] = 0; // Null-terminate
+//                     ESP_LOGE(TAG, "Error response: %s", response_buffer);
+//                 }
+//                 free(response_buffer);
+//             }
+//         }
+//     }
+
+//     // Check response
+//     if (status_code == 200 || status_code == 201) {
+//         ESP_LOGI(TAG, "Firebase data sent successfully");
+        
+//         // Get successful response body (for debugging)
+//         int content_length = esp_http_client_get_content_length(client);
+//         if (content_length > 0 && content_length < 2048) {
+//             char *response_buffer = malloc(content_length + 1);
+//             if (response_buffer) {
+//                 int read_len = esp_http_client_read_response(client, response_buffer, content_length);
+//                 if (read_len > 0) {
+//                     response_buffer[read_len] = 0; // Null-terminate
+//                     ESP_LOGI(TAG, "Success response (first 200 chars): %.200s%s", 
+//                             response_buffer, strlen(response_buffer) > 200 ? "..." : "");
+//                 }
+//                 free(response_buffer);
+//             }
+//         }
+//     } else {
+//         ESP_LOGE(TAG, "Failed to send data. Status code: %d", status_code);
+//         err = ESP_FAIL;
+//     }
+
 //     esp_http_client_cleanup(client);
-//     free(firestore_data);
-    
-//     return err;
+//     return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
 // }
 
-// Send pre-formatted Firestore data (без форматирования, т.к. данные уже в формате Firestore)
-esp_err_t firebase_send_firestore_data(const char *collection, const char *document_id, const char *firestore_data) {
-    // Check parameters
-    if (!collection || !firestore_data) {
-        return ESP_ERR_INVALID_ARG;
-    }
 
-    // Log input data size
-    ESP_LOGI(TAG, "Input Firestore data size: %zu bytes", strlen(firestore_data));
-    ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", (uint32_t)esp_get_free_heap_size());
-    
-    // Check and refresh token if needed
-    if (!is_token_valid()) {
-        ESP_LOGI(TAG, "Token expired or about to expire, generating new token");
-        if (create_jwt_token() != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to create new JWT token");
-            return ESP_FAIL;
-        }
-    }
 
-    // Format URL
-    char url[256];
-    if (document_id != NULL && strlen(document_id) > 0) {
-        // Для первого запроса не нужен updateMask - отправляем полный документ
-        // Параметр currentDocument.exists=false гарантирует, что документ будет создан, если его нет
-        snprintf(url, sizeof(url), "%s/%s/%s?currentDocument.exists=false", 
-                FIREBASE_URL, collection, document_id);
-    } else {
-        // Create document with auto-generated ID
-        snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
-    }
-    
-    ESP_LOGI(TAG, "Sending Firestore data to URL: %s", url);
 
-    // Выбираем HTTP метод в зависимости от presence document_id
-    esp_http_client_method_t http_method;
-    if (document_id != NULL && strlen(document_id) > 0) {
-        // Для документа с указанным ID используем PATCH (создает или обновляет)
-        http_method = HTTP_METHOD_PATCH;
-        ESP_LOGI(TAG, "Using HTTP PATCH for document with specified ID");
-    } else {
-        // Для автоматически генерируемого ID используем POST
-        http_method = HTTP_METHOD_POST;
-        ESP_LOGI(TAG, "Using HTTP POST for auto-generated document ID");
-    }
-
-    // Configure HTTP client with increased buffer sizes
-    esp_http_client_config_t config = {
-        .url = url,
-        .event_handler = firebase_http_event_handler,
-        .method = http_method,  // Используем выбранный метод
-        .transport_type = HTTP_TRANSPORT_OVER_SSL,
-        .cert_pem = firebase_root_cert,
-        .buffer_size = HTTP_RX_BUFFER_SIZE,     // Increased buffer size
-        .buffer_size_tx = HTTP_TX_BUFFER_SIZE,  // Increased buffer size
-        .timeout_ms = 30000,                    // Таймаут 30 секунд
-        .keep_alive_enable = true,              // Включаем keep-alive
-        .skip_cert_common_name_check = true,    // Пропускаем проверку общего имени в сертификате
-        .port = 443,
-        .use_global_ca_store = false,           // Экономит память
-        .crt_bundle_attach = esp_crt_bundle_attach
-    };
-
-    ESP_LOGI(TAG, "HTTP client config - RX buffer: %d, TX buffer: %d", 
-             HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
-    ESP_LOGI(TAG, "Memory before HTTP client init: free heap: %" PRIu32 ", largest block: %" PRIu32,
-             (uint32_t)esp_get_free_heap_size(), 
-             (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (client == NULL) {
-        ESP_LOGE(TAG, "Failed to initialize HTTP client");
-        return ESP_FAIL;
-    }
-
-    // Set headers
-    size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
-    char *auth_header = malloc(auth_header_size);
-    if (auth_header == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for auth header");
-        esp_http_client_cleanup(client);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    snprintf(auth_header, auth_header_size, "Bearer %s", jwt_token);
-    esp_http_client_set_header(client, "Authorization", auth_header);
-    esp_http_client_set_header(client, "Content-Type", "application/json");
-
-    // Set request body - поскольку firestore_data константный, мы не должны его освобождать
-    esp_http_client_set_post_field(client, firestore_data, strlen(firestore_data));
-
-    // Perform HTTP request with retry mechanism
-    esp_err_t err = ESP_FAIL;
-    for (int retry = 0; retry < MAX_HTTP_RETRIES; retry++) {
-        err = esp_http_client_perform(client);
-        
-        if (err == ESP_OK) {
-            // Успешно, выходим из цикла
-            break;
-        }
-        
-        ESP_LOGW(TAG, "HTTP request failed (attempt %d/%d): %s", 
-                 retry + 1, MAX_HTTP_RETRIES, esp_err_to_name(err));
-        
-        if (retry < MAX_HTTP_RETRIES - 1) {
-            // Ждем перед следующей попыткой (увеличивая время ожидания)
-            int delay_ms = (retry + 1) * 1000;
-            ESP_LOGI(TAG, "Retrying in %d ms...", delay_ms);
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
-        }
-    }
-    
-    // Освобождаем память auth_header
-    free(auth_header);
-    
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "HTTP POST request failed after %d attempts: %s", 
-                MAX_HTTP_RETRIES, esp_err_to_name(err));
-        esp_http_client_cleanup(client);
-        return err;
-    }
-
-    int status_code = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "HTTP status code: %d", status_code);
-
-    // Для кода 400 пытаемся получить тело ответа с ошибкой
-    if (status_code >= 400) {
-        // Получаем тело ответа
-        int content_length = esp_http_client_get_content_length(client);
-        ESP_LOGI(TAG, "Error response length: %d", content_length);
-        
-        if (content_length > 0 && content_length < 2048) {
-            char *response_buffer = malloc(content_length + 1);
-            if (response_buffer) {
-                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
-                if (read_len > 0) {
-                    response_buffer[read_len] = 0; // Null-terminate
-                    ESP_LOGE(TAG, "Error response: %s", response_buffer);
-                }
-                free(response_buffer);
-            }
-        }
-    }
-
-    // Check response
-    if (status_code == 200 || status_code == 201) {
-        ESP_LOGI(TAG, "Firebase data sent successfully");
-        
-        // Получаем тело успешного ответа (для отладки)
-        int content_length = esp_http_client_get_content_length(client);
-        if (content_length > 0 && content_length < 2048) {
-            char *response_buffer = malloc(content_length + 1);
-            if (response_buffer) {
-                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
-                if (read_len > 0) {
-                    response_buffer[read_len] = 0; // Null-terminate
-                    ESP_LOGI(TAG, "Success response (first 200 chars): %.200s%s", 
-                            response_buffer, strlen(response_buffer) > 200 ? "..." : "");
-                }
-                free(response_buffer);
-            }
-        }
-    } else {
-        ESP_LOGE(TAG, "Failed to send data. Status code: %d", status_code);
-        err = ESP_FAIL;
-    }
-
-    esp_http_client_cleanup(client);
-    return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
-}
-
-// Вспомогательная функция для отправки по указанному URL с настройками merge
-static esp_err_t firebase_send_to_url(const char *full_url, const char *data) {
-    // Check parameters
-    if (!full_url || !data) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Log input data size
-    ESP_LOGI(TAG, "Input data size: %zu bytes", strlen(data));
-    ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", (uint32_t)esp_get_free_heap_size());
-    ESP_LOGI(TAG, "Sending to URL: %s", full_url);
-    
-    // Check and refresh token if needed
-    if (!is_token_valid()) {
-        ESP_LOGI(TAG, "Token expired or about to expire, generating new token");
-        if (create_jwt_token() != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to create new JWT token");
-            return ESP_FAIL;
-        }
-    }
-
-    // Configure HTTP client
-    esp_http_client_config_t config = {
-        .url = full_url,
-        .event_handler = firebase_http_event_handler,
-        .method = HTTP_METHOD_PATCH,  // Используем PATCH для merge
-        .transport_type = HTTP_TRANSPORT_OVER_SSL,
-        .cert_pem = firebase_root_cert,
-        .buffer_size = HTTP_RX_BUFFER_SIZE,
-        .buffer_size_tx = HTTP_TX_BUFFER_SIZE,
-        .timeout_ms = 30000,                    // Таймаут 30 секунд
-        .keep_alive_enable = true,              // Включаем keep-alive
-        .skip_cert_common_name_check = true,    // Пропускаем проверку общего имени в сертификате
-        .port = 443,
-        .use_global_ca_store = false,           // Экономит память
-        .crt_bundle_attach = esp_crt_bundle_attach
-    };
-
-    ESP_LOGI(TAG, "HTTP client config - RX buffer: %d, TX buffer: %d", 
-             HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
-    ESP_LOGI(TAG, "Memory before HTTP client init: free heap: %" PRIu32 ", largest block: %" PRIu32,
-             (uint32_t)esp_get_free_heap_size(), 
-             (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (client == NULL) {
-        ESP_LOGE(TAG, "Failed to initialize HTTP client");
-        return ESP_FAIL;
-    }
-
-    // Set headers
-    size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
-    char *auth_header = malloc(auth_header_size);
-    if (auth_header == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for auth header");
-        esp_http_client_cleanup(client);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    snprintf(auth_header, auth_header_size, "Bearer %s", jwt_token);
-    esp_http_client_set_header(client, "Authorization", auth_header);
-    esp_http_client_set_header(client, "Content-Type", "application/json");
-
-    // Set request body
-    esp_http_client_set_post_field(client, data, strlen(data));
-
-    // Perform HTTP request with retry mechanism
-    esp_err_t err = ESP_FAIL;
-    for (int retry = 0; retry < MAX_HTTP_RETRIES; retry++) {
-        err = esp_http_client_perform(client);
-        
-        if (err == ESP_OK) {
-            // Успешно, выходим из цикла
-            break;
-        }
-        
-        ESP_LOGW(TAG, "HTTP PATCH request failed (attempt %d/%d): %s", 
-                 retry + 1, MAX_HTTP_RETRIES, esp_err_to_name(err));
-        
-        if (retry < MAX_HTTP_RETRIES - 1) {
-            // Ждем перед следующей попыткой
-            int delay_ms = (retry + 1) * 1000;
-            ESP_LOGI(TAG, "Retrying in %d ms...", delay_ms);
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
-        }
-    }
-    
-    // Освобождаем память auth_header
-    free(auth_header);
-    
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "HTTP PATCH request failed after %d attempts: %s", 
-                MAX_HTTP_RETRIES, esp_err_to_name(err));
-        esp_http_client_cleanup(client);
-        return err;
-    }
-
-    int status_code = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "HTTP status code: %d", status_code);
-
-    // Для кода 400 пытаемся получить тело ответа с ошибкой
-    if (status_code >= 400) {
-        // Получаем тело ответа
-        int content_length = esp_http_client_get_content_length(client);
-        ESP_LOGI(TAG, "Error response length: %d", content_length);
-        
-        if (content_length > 0 && content_length < 2048) {
-            char *response_buffer = malloc(content_length + 1);
-            if (response_buffer) {
-                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
-                if (read_len > 0) {
-                    response_buffer[read_len] = 0; // Null-terminate
-                    ESP_LOGE(TAG, "Error response: %s", response_buffer);
-                }
-                free(response_buffer);
-            }
-        }
-    }
-
-    // Check response
-    if (status_code == 200 || status_code == 201) {
-        ESP_LOGI(TAG, "Firebase data merged successfully");
-        
-        // Получаем тело успешного ответа (для отладки)
-        int content_length = esp_http_client_get_content_length(client);
-        if (content_length > 0 && content_length < 2048) {
-            char *response_buffer = malloc(content_length + 1);
-            if (response_buffer) {
-                int read_len = esp_http_client_read_response(client, response_buffer, content_length);
-                if (read_len > 0) {
-                    response_buffer[read_len] = 0; // Null-terminate
-                    ESP_LOGI(TAG, "Success response (first 200 chars): %.200s%s", 
-                            response_buffer, strlen(response_buffer) > 200 ? "..." : "");
-                }
-                free(response_buffer);
-            }
-        }
-    } else {
-        ESP_LOGE(TAG, "Failed to merge data. Status code: %d", status_code);
-        err = ESP_FAIL;
-    }
-
-    esp_http_client_cleanup(client);
-    return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
-}
-
-// Провайдер содержимого для потоковой передачи
-static esp_err_t json_data_provider(void *buffer, size_t offset, size_t len, void *arg)
-{
-    if (current_json_data == NULL || json_data_len == 0 || json_data_pos >= json_data_len) {
-        return ESP_FAIL;
-    }
-    
-    size_t remaining = json_data_len - json_data_pos;
-    size_t copy_len = (len < remaining) ? len : remaining;
-    
-    memcpy(buffer, current_json_data + json_data_pos, copy_len);
-    json_data_pos += copy_len;
-    
-    ESP_LOGI(TAG, "Отправлено %zu байт, позиция %zu из %zu", 
-             copy_len, json_data_pos, json_data_len);
-    
-    return ESP_OK;
-}
-
-// Упрощенная версия без провайдера данных
+// Simplified version without data provider
 esp_err_t firebase_send_streamed_data(const char *collection, const char *document_id, const char *firestore_data) {
-    // Проверка аргументов
+    // Check arguments
     if (!collection || !firestore_data) {
         return ESP_ERR_INVALID_ARG;
     }
     
-    // Размер JSON данных
+    // JSON data size
     size_t data_size = strlen(firestore_data);
-    ESP_LOGI(TAG, "Общий размер данных: %zu байт", data_size);
+    ESP_LOGI(TAG, "Total data size: %zu bytes", data_size);
     
-    // Проверка токена
+    // Check token
     if (!is_token_valid()) {
         if (create_jwt_token() != ESP_OK) {
             return ESP_FAIL;
         }
     }
     
-    // Формирование URL
+    // Forming URL
     char url[256];
     if (document_id && strlen(document_id) > 0) {
         snprintf(url, sizeof(url), "%s/%s/%s", FIREBASE_URL, collection, document_id);
@@ -614,27 +329,26 @@ esp_err_t firebase_send_streamed_data(const char *collection, const char *docume
         snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
     }
     
-    // Метод HTTP
+    // HTTP method
     esp_http_client_method_t http_method = (document_id && strlen(document_id) > 0) ? 
                                          HTTP_METHOD_PATCH : HTTP_METHOD_POST;
     
-    // Конфигурация клиента с маленькими буферами
     esp_http_client_config_t config = {
         .url = url,
         .event_handler = firebase_http_event_handler,
         .method = http_method,
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .cert_pem = firebase_root_cert,
-        .buffer_size = 4096,        // Маленький RX буфер
-        .buffer_size_tx = 4096,     // Маленький TX буфер
-        .timeout_ms = 60000,        // Больший таймаут
+        .buffer_size = 4096,        
+        .buffer_size_tx = 4096,     
+        .timeout_ms = 60000,        
         .crt_bundle_attach = esp_crt_bundle_attach
     };
     
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return ESP_FAIL;
     
-    // Выделяем память для auth_header в куче, а не на стеке
+    // Allocate memory for auth_header in heap
     size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
     char *auth_header = malloc(auth_header_size);
     if (!auth_header) {
@@ -646,17 +360,17 @@ esp_err_t firebase_send_streamed_data(const char *collection, const char *docume
     esp_http_client_set_header(client, "Authorization", auth_header);
     esp_http_client_set_header(client, "Content-Type", "application/json");
     
-    // Установка данных напрямую
+    // Setting data directly
     esp_http_client_set_post_field(client, firestore_data, data_size);
     
-    // Запрос
+    // Request
     esp_err_t err = esp_http_client_perform(client);
     int status_code = (err == ESP_OK) ? esp_http_client_get_status_code(client) : 0;
     
-    ESP_LOGI(TAG, "HTTP статус: %d, результат: %s", 
+    ESP_LOGI(TAG, "HTTP status: %d, result: %s", 
              status_code, (err == ESP_OK) ? "OK" : esp_err_to_name(err));
     
-    // Освобождаем память
+    // Free memory
     free(auth_header);
     esp_http_client_cleanup(client);
     

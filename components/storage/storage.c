@@ -122,7 +122,7 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        return ESP_ERR_INVALID_STATE;
    }
 
-//    // 1. Сначала сохраняем в обычном формате для совместимости
+//    // 1. At first, save in the usual format for compatibility
 //    ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
 //    struct stat st;
 //    if (stat(MEASUREMENTS_FILE, &st) == 0) {
@@ -187,20 +187,20 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
 //    fclose(f);
 //    free(new_json_str);
 
-   // 2. Теперь сохраняем в формате Firestore
+   // 2. Now save in Firestore format
    ESP_LOGI(TAG, "Saving in Firestore format to: %s", FIRESTORE_MEASUREMENTS_FILE);
    
-   // Для Firestore нам нужно сохранить документ с полями
+   // For Firestore, we need to save a document with fields
    cJSON *firestore_doc = NULL;
    cJSON *firestore_fields = NULL;
    cJSON *measurements_field = NULL;
    cJSON *array_value = NULL;
    cJSON *values_array = NULL;
    
-   // Проверяем, существует ли уже файл с Firestore структурой
+   // Check if the file with Firestore structure already exists
    FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
    if (f != NULL) {
-       // Если файл существует, загружаем структуру
+       // If the file exists, load the structure
        fseek(f, 0, SEEK_END);
        long fsize = ftell(f);
        fseek(f, 0, SEEK_SET);
@@ -219,22 +219,22 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    }
    
    if (firestore_doc == NULL) {
-       // Если файл не существует или пустой, создаем новую структуру
+       // If the file does not exist or is empty, create a new structure
        firestore_doc = cJSON_CreateObject();
        firestore_fields = cJSON_CreateObject();
        
-       // Добавляем tag_id (MAC адрес) как поле
+       // Add tag_id (MAC address) as a field
        cJSON *tag_id_field = cJSON_CreateObject();
        cJSON_AddStringToObject(tag_id_field, "stringValue", measurement->mac_address);
        cJSON_AddItemToObject(firestore_fields, "tag_id", tag_id_field);
        
-       // Добавляем текущую дату как поле
+       // Add current date as a field
        char time_str[32];
        if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
            strcpy(time_str, "Time not available");
        }
        
-       // Извлекаем только дату (первые 10 символов)
+       // Extract only the date (first 10 characters)
        char day[11] = {0}; // YYYY-MM-DD\0
        strncpy(day, time_str, 10);
        day[10] = '\0';
@@ -243,7 +243,7 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        cJSON_AddStringToObject(day_field, "stringValue", day);
        cJSON_AddItemToObject(firestore_fields, "day", day_field);
        
-       // Создаем массив measurements
+       // Create an array of measurements
        measurements_field = cJSON_CreateObject();
        array_value = cJSON_CreateObject();
        values_array = cJSON_CreateArray();
@@ -252,10 +252,10 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        cJSON_AddItemToObject(measurements_field, "arrayValue", array_value);
        cJSON_AddItemToObject(firestore_fields, "measurements", measurements_field);
        
-       // Добавляем поля к корневому объекту
+       // Add fields to the root object
        cJSON_AddItemToObject(firestore_doc, "fields", firestore_fields);
    } else {
-       // Если структура уже существует, извлекаем массив measurements
+       // If the structure already exists, extract the measurements array
        firestore_fields = cJSON_GetObjectItem(firestore_doc, "fields");
        if (!firestore_fields) {
            ESP_LOGE(TAG, "Invalid Firestore format: missing fields object");
@@ -285,13 +285,13 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        }
    }
    
-   // Теперь добавляем новое измерение в Firestore формате
+   // Now add a new measurement in Firestore format
    char time_str[32];
    if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
        strcpy(time_str, "Time not available");
    }
    
-   // Извлекаем только время (последние 8 символов, если доступно)
+   // Extract only time (last 8 characters, if available)
    char timestamp[9] = {0};
    if (strlen(time_str) >= 19) {
        strncpy(timestamp, time_str + 11, 8);
@@ -301,14 +301,14 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        timestamp[8] = '\0';
    }
    
-   // Создаем объект для измерения
+   // Create an object for the measurement
    cJSON *measurement_map_obj = cJSON_CreateObject();
    cJSON *measurement_map_value = cJSON_CreateObject();
    cJSON *measurement_map_fields = cJSON_CreateObject();
    
-   // Добавляем поля температуры, влажности и времени
+   // Add fields for temperature, humidity and time
    
-   // Температура
+   // Temperature
    cJSON *temp_field = cJSON_CreateObject();
    float rounded_temp = roundf(measurement->temperature * 100) / 100;
    char temp_str[10];
@@ -316,7 +316,7 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    cJSON_AddStringToObject(temp_field, "stringValue", temp_str);
    cJSON_AddItemToObject(measurement_map_fields, "t", temp_field);
    
-   // Влажность
+   // Humidity
    cJSON *hum_field = cJSON_CreateObject();
    float rounded_hum = roundf(measurement->humidity * 100) / 100;
    char hum_str[10];
@@ -324,20 +324,20 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    cJSON_AddStringToObject(hum_field, "stringValue", hum_str);
    cJSON_AddItemToObject(measurement_map_fields, "h", hum_field);
    
-   // Временная метка
+   // Timestamp
    cJSON *timestamp_field = cJSON_CreateObject();
    cJSON_AddStringToObject(timestamp_field, "stringValue", timestamp);
    cJSON_AddItemToObject(measurement_map_fields, "ts", timestamp_field);
    
-   // Добавляем в структуру
+   // Add to the structure
    cJSON_AddItemToObject(measurement_map_value, "fields", measurement_map_fields);
    cJSON_AddItemToObject(measurement_map_obj, "mapValue", measurement_map_value);
    cJSON_AddItemToArray(values_array, measurement_map_obj);
 
-   // Выводим длину массива
+   // Output the length of the array
    ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values_array));
    
-   // Сохраняем обновленную Firestore структуру
+   // Save the updated Firestore structure
    char *firestore_json_str = cJSON_PrintUnformatted(firestore_doc);
    cJSON_Delete(firestore_doc);
    
@@ -355,7 +355,7 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    fclose(f);
    free(firestore_json_str);
    
-//    // Проверка файлов
+//    // Check files
 //    struct stat st_normal, st_firestore;
 //    if (stat(MEASUREMENTS_FILE, &st_normal) == 0 && stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
 //        ESP_LOGI(TAG, "Files saved - Normal: %ld bytes, Firestore: %ld bytes", 
@@ -363,7 +363,7 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
 //    } else {
 //        ESP_LOGE(TAG, "File verification failed!");
 //    }
-   // Проверка файлов
+   // Check files
    struct stat st_firestore;
    if (stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
        ESP_LOGI(TAG, "Files saved - Firestore: %ld bytes", st_firestore.st_size);
