@@ -88,11 +88,10 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     
     if (USE_AUTO_ID) {
         ESP_LOGI(TAG, "Using auto-generated document ID from Firestore");
-        //result = firebase_send_firestore_data("daily_measurements", NULL, firestore_data);
         result = firebase_send_streamed_data("daily_measurements", NULL, firestore_data);
     } else {
-        // Generate document ID based on current date
-        static char doc_id[32]; 
+        // Generate document ID based on current date and MAC address
+        static char doc_id[64]; 
         
         // Get current time
         time_t now;
@@ -100,11 +99,29 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
         time(&now);
         localtime_r(&now, &timeinfo);
         
-        // Format in YYYY-MM-DD format
-        strftime(doc_id, sizeof(doc_id), "%Y-%m-%d", &timeinfo);
+        // Extract MAC address from the Firestore data
+        char mac_address[18] = "unknown";
+        cJSON *json = cJSON_Parse(firestore_data);
+        if (json) {
+            cJSON *fields = cJSON_GetObjectItem(json, "fields");
+            if (fields) {
+                cJSON *tag_id = cJSON_GetObjectItem(fields, "tag_id");
+                if (tag_id) {
+                    cJSON *string_value = cJSON_GetObjectItem(tag_id, "stringValue");
+                    if (string_value && cJSON_IsString(string_value)) {
+                        strncpy(mac_address, string_value->valuestring, sizeof(mac_address) - 1);
+                        mac_address[sizeof(mac_address) - 1] = '\0';
+                    }
+                }
+            }
+            cJSON_Delete(json);
+        }
+        
+        // Format in YYYY-MM-DD_MAC format
+        strftime(doc_id, sizeof(doc_id), "%Y-%m-%d_", &timeinfo);
+        strncat(doc_id, mac_address, sizeof(doc_id) - strlen(doc_id) - 1);
         
         ESP_LOGI(TAG, "Using custom document ID: %s", doc_id);
-        //result = firebase_send_firestore_data("daily_measurements", doc_id, firestore_data);
         result = firebase_send_streamed_data("daily_measurements", doc_id, firestore_data);
     }
     

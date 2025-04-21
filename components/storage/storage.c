@@ -190,14 +190,8 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    // 2. Now save in Firestore format
    ESP_LOGI(TAG, "Saving in Firestore format to: %s", FIRESTORE_MEASUREMENTS_FILE);
    
-   // For Firestore, we need to save a document with fields
+   // Load existing Firestore structure file if it exists
    cJSON *firestore_doc = NULL;
-   cJSON *firestore_fields = NULL;
-   cJSON *measurements_field = NULL;
-   cJSON *array_value = NULL;
-   cJSON *values_array = NULL;
-   
-   // Check if the file with Firestore structure already exists
    FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
    if (f != NULL) {
        // If the file exists, load the structure
@@ -218,124 +212,27 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        fclose(f);
    }
    
+   // Create or update Firestore document
+   firestore_doc = json_helper_create_or_update_firestore_document(firestore_doc, measurement->mac_address);
    if (firestore_doc == NULL) {
-       // If the file does not exist or is empty, create a new structure
-       firestore_doc = cJSON_CreateObject();
-       firestore_fields = cJSON_CreateObject();
-       
-       // Add tag_id (MAC address) as a field
-       cJSON *tag_id_field = cJSON_CreateObject();
-       cJSON_AddStringToObject(tag_id_field, "stringValue", measurement->mac_address);
-       cJSON_AddItemToObject(firestore_fields, "tag_id", tag_id_field);
-       
-       // Add current date as a field
-       char time_str[32];
-       if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
-           strcpy(time_str, "Time not available");
-       }
-       
-       // Extract only the date (first 10 characters)
-       char day[11] = {0}; // YYYY-MM-DD\0
-       strncpy(day, time_str, 10);
-       day[10] = '\0';
-       
-       cJSON *day_field = cJSON_CreateObject();
-       cJSON_AddStringToObject(day_field, "stringValue", day);
-       cJSON_AddItemToObject(firestore_fields, "day", day_field);
-       
-       // Create an array of measurements
-       measurements_field = cJSON_CreateObject();
-       array_value = cJSON_CreateObject();
-       values_array = cJSON_CreateArray();
-       
-       cJSON_AddItemToObject(array_value, "values", values_array);
-       cJSON_AddItemToObject(measurements_field, "arrayValue", array_value);
-       cJSON_AddItemToObject(firestore_fields, "measurements", measurements_field);
-       
-       // Add fields to the root object
-       cJSON_AddItemToObject(firestore_doc, "fields", firestore_fields);
-   } else {
-       // If the structure already exists, extract the measurements array
-       firestore_fields = cJSON_GetObjectItem(firestore_doc, "fields");
-       if (!firestore_fields) {
-           ESP_LOGE(TAG, "Invalid Firestore format: missing fields object");
-           cJSON_Delete(firestore_doc);
-           return ESP_FAIL;
-       }
-       
-       measurements_field = cJSON_GetObjectItem(firestore_fields, "measurements");
-       if (!measurements_field) {
-           ESP_LOGE(TAG, "Invalid Firestore format: missing measurements field");
-           cJSON_Delete(firestore_doc);
-           return ESP_FAIL;
-       }
-       
-       array_value = cJSON_GetObjectItem(measurements_field, "arrayValue");
-       if (!array_value) {
-           ESP_LOGE(TAG, "Invalid Firestore format: missing arrayValue");
-           cJSON_Delete(firestore_doc);
-           return ESP_FAIL;
-       }
-       
-       values_array = cJSON_GetObjectItem(array_value, "values");
-       if (!values_array) {
-           ESP_LOGE(TAG, "Invalid Firestore format: missing values array");
-           cJSON_Delete(firestore_doc);
-           return ESP_FAIL;
-       }
+       ESP_LOGE(TAG, "Failed to create Firestore document");
+       return ESP_FAIL;
    }
    
-   // Now add a new measurement in Firestore format
-   char time_str[32];
-   if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
-       strcpy(time_str, "Time not available");
+   // Add measurement to the document
+   esp_err_t result = json_helper_add_measurement_to_firestore(firestore_doc, measurement);
+   if (result != ESP_OK) {
+       ESP_LOGE(TAG, "Failed to add measurement to Firestore document");
+       cJSON_Delete(firestore_doc);
+       return result;
    }
    
-   // Extract only time (last 8 characters, if available)
-   char timestamp[9] = {0};
-   if (strlen(time_str) >= 19) {
-       strncpy(timestamp, time_str + 11, 8);
-       timestamp[8] = '\0';
-   } else {
-       strncpy(timestamp, time_str, 8);
-       timestamp[8] = '\0';
-   }
-   
-   // Create an object for the measurement
-   cJSON *measurement_map_obj = cJSON_CreateObject();
-   cJSON *measurement_map_value = cJSON_CreateObject();
-   cJSON *measurement_map_fields = cJSON_CreateObject();
-   
-   // Add fields for temperature, humidity and time
-   
-   // Temperature
-   cJSON *temp_field = cJSON_CreateObject();
-   float rounded_temp = roundf(measurement->temperature * 100) / 100;
-   char temp_str[10];
-   sprintf(temp_str, "%.2f", rounded_temp);
-   cJSON_AddStringToObject(temp_field, "stringValue", temp_str);
-   cJSON_AddItemToObject(measurement_map_fields, "t", temp_field);
-   
-   // Humidity
-   cJSON *hum_field = cJSON_CreateObject();
-   float rounded_hum = roundf(measurement->humidity * 100) / 100;
-   char hum_str[10];
-   sprintf(hum_str, "%.2f", rounded_hum);
-   cJSON_AddStringToObject(hum_field, "stringValue", hum_str);
-   cJSON_AddItemToObject(measurement_map_fields, "h", hum_field);
-   
-   // Timestamp
-   cJSON *timestamp_field = cJSON_CreateObject();
-   cJSON_AddStringToObject(timestamp_field, "stringValue", timestamp);
-   cJSON_AddItemToObject(measurement_map_fields, "ts", timestamp_field);
-   
-   // Add to the structure
-   cJSON_AddItemToObject(measurement_map_value, "fields", measurement_map_fields);
-   cJSON_AddItemToObject(measurement_map_obj, "mapValue", measurement_map_value);
-   cJSON_AddItemToArray(values_array, measurement_map_obj);
-
-   // Output the length of the array
-   ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values_array));
+   // Get the size of the measurements array for logging
+   cJSON *fields = cJSON_GetObjectItem(firestore_doc, "fields");
+   cJSON *measurements = cJSON_GetObjectItem(fields, "measurements");
+   cJSON *array_value = cJSON_GetObjectItem(measurements, "arrayValue");
+   cJSON *values = cJSON_GetObjectItem(array_value, "values");
+   ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values));
    
    // Save the updated Firestore structure
    char *firestore_json_str = cJSON_PrintUnformatted(firestore_doc);
@@ -355,14 +252,6 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    fclose(f);
    free(firestore_json_str);
    
-//    // Check files
-//    struct stat st_normal, st_firestore;
-//    if (stat(MEASUREMENTS_FILE, &st_normal) == 0 && stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
-//        ESP_LOGI(TAG, "Files saved - Normal: %ld bytes, Firestore: %ld bytes", 
-//                 st_normal.st_size, st_firestore.st_size);
-//    } else {
-//        ESP_LOGE(TAG, "File verification failed!");
-//    }
    // Check files
    struct stat st_firestore;
    if (stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
