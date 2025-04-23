@@ -5,6 +5,6 @@ build/
 main/idf_component.yml
 sdkconfig.old
 sdkconfig.ci
-docs/
+docs/*
 .vscode/settings.json
 images/*

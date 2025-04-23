@@ -100,9 +100,9 @@ static esp_err_t sending_message_to_discord() {
 void app_main(void)
 {   
     #if !SYSTEM_LOGGING
-    ESP_LOGI(TAG, "Logging is disabled");
-    ESP_LOGI(TAG, "Program started");
-    esp_log_level_set("*", ESP_LOG_NONE);
+        ESP_LOGI(TAG, "Logging is disabled");
+        ESP_LOGI(TAG, "Program started");
+        esp_log_level_set("*", ESP_LOG_NONE);
     #endif
 
     // Save start time and trigger time
@@ -152,9 +152,9 @@ void app_main(void)
             goto second_block_init;
             
         #if DISCORD_LOGGING
-        case STATE_THIRD_BLOCK_RECOVERY:
-            storage_append_log("Entering third block recovery mode");
-            goto third_block_init;
+            case STATE_THIRD_BLOCK_RECOVERY:
+                storage_append_log("Entering third block recovery mode");
+                goto third_block_init;
         #endif
             
         case STATE_NORMAL:
@@ -328,44 +328,44 @@ second_block_init:
     
     // Sending logs if data was sent
     #if DISCORD_LOGGING
-    if (data_from_storage_sent && !network_initialized) {
-        storage_append_log("Sending logs");
+        if (data_from_storage_sent && !network_initialized) {
+            storage_append_log("Sending logs");
 
-        // Setting the state for the third block
-        storage_set_system_state(STATE_THIRD_BLOCK_RECOVERY);
-        vTaskDelay(pdMS_TO_TICKS(500));
+            // Setting the state for the third block
+            storage_set_system_state(STATE_THIRD_BLOCK_RECOVERY);
+            vTaskDelay(pdMS_TO_TICKS(500));
 
-third_block_init:
+    third_block_init:
 
-        // Modem initialization for logs sending
-        ret = gsm_modem_init();
-        if (ret != ESP_OK) {
-            storage_append_log("GSM modem init failed for logs");
-            goto sleep_prepare;
-        } else {
-            network_initialized = true;
-
-            // Add time synchronization
-            time_t network_time = gsm_get_network_time();
-            if (network_time > 0) {
-                time_manager_set_from_timestamp(network_time); // Synchronize time
+            // Modem initialization for logs sending
+            ret = gsm_modem_init();
+            if (ret != ESP_OK) {
+                storage_append_log("GSM modem init failed for logs");
+                goto sleep_prepare;
             } else {
-                storage_append_log("Failed to synchronize time with NTP");
+                network_initialized = true;
+
+                // Add time synchronization
+                time_t network_time = gsm_get_network_time();
+                if (network_time > 0) {
+                    time_manager_set_from_timestamp(network_time); // Synchronize time
+                } else {
+                    storage_append_log("Failed to synchronize time with NTP");
+                }
+            }
+
+            // Setting the normal state
+            storage_set_system_state(STATE_NORMAL);
+            vTaskDelay(pdMS_TO_TICKS(500));
+            
+            // Discord API initialization for logs sending
+            ret = discord_init();
+            if (ret != ESP_OK) {
+                storage_append_log("Discord API init failed for logs");
+                gsm_modem_deinit();
+                goto sleep_prepare;
             }
         }
-
-        // Setting the normal state
-        storage_set_system_state(STATE_NORMAL);
-        vTaskDelay(pdMS_TO_TICKS(500));
-        
-        // Discord API initialization for logs sending
-        ret = discord_init();
-        if (ret != ESP_OK) {
-            storage_append_log("Discord API init failed for logs");
-            gsm_modem_deinit();
-            goto sleep_prepare;
-        }
-    }
     #endif
     
 
@@ -379,8 +379,8 @@ third_block_init:
     storage_set_system_state(STATE_NORMAL);
     
 #if DISCORD_LOGGING
-// Preparing for sleep
-sleep_prepare:
+    // Preparing for sleep
+    sleep_prepare:
 #endif
     // Calculate execution time and remaining sleep time
     int64_t current_time = esp_timer_get_time();

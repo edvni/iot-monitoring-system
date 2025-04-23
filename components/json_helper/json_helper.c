@@ -136,14 +136,14 @@ esp_err_t json_helper_add_measurement_to_firestore(cJSON* firestore_doc, ruuvi_m
     }
     
     // Extract only time (last 8 characters, if available)
-    char timestamp[9] = {0};
-    if (strlen(time_str) >= 19) {
-        strncpy(timestamp, time_str + 11, 8);
-        timestamp[8] = '\0';
-    } else {
-        strncpy(timestamp, time_str, 8);
-        timestamp[8] = '\0';
-    }
+    // char timestamp[9] = {0};
+    // if (strlen(time_str) >= 19) {
+    //     strncpy(timestamp, time_str + 11, 8);
+    //     timestamp[8] = '\0';
+    // } else {
+    //     strncpy(timestamp, time_str, 8);
+    //     timestamp[8] = '\0';
+    // }
     
     // Create an object for the measurement
     cJSON *measurement_map_obj = cJSON_CreateObject();
@@ -170,7 +170,8 @@ esp_err_t json_helper_add_measurement_to_firestore(cJSON* firestore_doc, ruuvi_m
     
     // Timestamp
     cJSON *timestamp_field = cJSON_CreateObject();
-    cJSON_AddStringToObject(timestamp_field, "stringValue", timestamp);
+    // cJSON_AddStringToObject(timestamp_field, "stringValue", timestamp);
+    cJSON_AddStringToObject(timestamp_field, "stringValue", time_str);
     cJSON_AddItemToObject(measurement_map_fields, "ts", timestamp_field);
     
     // Add to the structure

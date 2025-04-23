@@ -99,23 +99,9 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
         time(&now);
         localtime_r(&now, &timeinfo);
         
-        // Extract MAC address from the Firestore data
-        char mac_address[18] = "unknown";
-        cJSON *json = cJSON_Parse(firestore_data);
-        if (json) {
-            cJSON *fields = cJSON_GetObjectItem(json, "fields");
-            if (fields) {
-                cJSON *tag_id = cJSON_GetObjectItem(fields, "tag_id");
-                if (tag_id) {
-                    cJSON *string_value = cJSON_GetObjectItem(tag_id, "stringValue");
-                    if (string_value && cJSON_IsString(string_value)) {
-                        strncpy(mac_address, string_value->valuestring, sizeof(mac_address) - 1);
-                        mac_address[sizeof(mac_address) - 1] = '\0';
-                    }
-                }
-            }
-            cJSON_Delete(json);
-        }
+        // Use extracted MAC address from tag_id_value
+        const char *mac_address = tag_id_value->valuestring;
+        ESP_LOGI(TAG, "Extracted MAC address: %s", mac_address);
         
         // Format in YYYY-MM-DD_MAC format
         strftime(doc_id, sizeof(doc_id), "%Y-%m-%d_", &timeinfo);

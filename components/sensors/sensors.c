@@ -10,7 +10,6 @@
 #include "services/gap/ble_svc_gap.h"
 
 static const char *TAG = "SENSORS";
-//static const char *TARGET_MAC = "C4:D9:12:ED:63:C6";
 static const char *TARGET_MACS[] = {
     "DB:C3:58:D9:03:70", // Vladimir RuuviTag
     "C4:D9:12:ED:63:C6", // Edvard RuuviTag
