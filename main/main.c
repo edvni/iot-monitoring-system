@@ -2,7 +2,7 @@
 
 // Global logging definitions. If true, logging will be enabled.
 #define DISCORD_LOGGING false
-#define SYSTEM_LOGGING false
+#define SYSTEM_LOGGING true
 
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -43,18 +43,11 @@ char message[128];
 
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
-    static bool data_saved = false;  // Status flag for tracking saved data
-
-    if (data_saved) {
-        return;
-    }
-
-    // Mearurements saiving
     esp_err_t ret = storage_save_measurement(measurement);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to save measurement");
+        ESP_LOGE(TAG, "Failed to save measurement from %s", measurement->mac_address);
     } else {
-        data_saved = true;     // Mark that we saved
+        ESP_LOGI(TAG, "Successfully saved data from %s", measurement->mac_address);
         data_received = true;  // Set the flag for the main cycle
     }
 }
@@ -212,23 +205,81 @@ first_block_init:
     bool error_in_prev_cycle = storage_get_error_flag();    
     if(!error_in_prev_cycle) {
         storage_append_log("Starting data collection");
-        data_received = false;
-        // Sensors initialization
-        ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
         
-        // Waiting for data
-        const int MAX_WAIT_TIME_MS = 10000;
-        int waited_ms = 0;
-        const int CHECK_INTERVAL_MS = 500;
+        // Declaration of variables for the retry mechanism
+        const int MAX_SCAN_ATTEMPTS = 3;
+        int scan_attempt = 0;
+        const int TOTAL_SENSORS = sensors_get_total_count();
+        bool all_sensors_received = false;
         
-        while (!data_received && waited_ms < MAX_WAIT_TIME_MS) {
-            vTaskDelay(pdMS_TO_TICKS(CHECK_INTERVAL_MS));
-            waited_ms += CHECK_INTERVAL_MS;
+        // Cycle of repeated attempts to scan
+        while (scan_attempt < MAX_SCAN_ATTEMPTS && !all_sensors_received) {
+            if (scan_attempt > 0) {
+                ESP_LOGI(TAG, "Starting scan attempt %d of %d", scan_attempt + 1, MAX_SCAN_ATTEMPTS);
+                storage_append_log("Restarting sensor scan");
+                
+                // Stop the previous scan and reinitialize the sensors
+                sensors_deinit();
+                
+                // Reset the sensor status
+                sensors_reset_status();
+                
+                vTaskDelay(pdMS_TO_TICKS(500)); // Small pause between attempts
+            }
+            
+            // Sensors initialization
+            ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
+            
+            // Waiting for data
+            const int MAX_WAIT_TIME_MS = 10000;
+            int waited_ms = 0;
+            const int CHECK_INTERVAL_MS = 500;
+            
+            // Wait until all sensors have sent data or the timeout expires
+            while (sensors_get_received_count() < TOTAL_SENSORS && waited_ms < MAX_WAIT_TIME_MS) {
+                vTaskDelay(pdMS_TO_TICKS(CHECK_INTERVAL_MS));
+                waited_ms += CHECK_INTERVAL_MS;
+                
+                // Log progress every 2.5 seconds
+                if (waited_ms % 2500 == 0) {
+                    ESP_LOGI(TAG, "Waiting for sensors: %d/%d received, waited %d ms", 
+                             sensors_get_received_count(), TOTAL_SENSORS, waited_ms);
+                }
+            }
+            
+            // Check if all sensors are detected
+            all_sensors_received = (sensors_get_received_count() == TOTAL_SENSORS);
+            
+            if (!all_sensors_received) {
+                char log_message[64];
+                snprintf(log_message, sizeof(log_message), "Incomplete scan: %d/%d sensors, attempt %d", 
+                        sensors_get_received_count(), TOTAL_SENSORS, scan_attempt + 1);
+                storage_append_log(log_message);
+                ESP_LOGW(TAG, "%s", log_message);
+            }
+            
+            scan_attempt++;
         }
         
-        if (!data_received) {
-            storage_append_log("Failed to receive sensor data");
-        } 
+        // Write to log information about received sensors
+        if (!sensors_any_data_received()) {
+            storage_append_log("Failed to receive any sensor data");
+        } else {
+            char log_message[64];
+            snprintf(log_message, sizeof(log_message), "Received data from %d/%d sensors after %d attempts", 
+                    sensors_get_received_count(), TOTAL_SENSORS, scan_attempt);
+            storage_append_log(log_message);
+            ESP_LOGI(TAG, "%s", log_message);
+            
+            if (sensors_get_received_count() == TOTAL_SENSORS) {
+                ESP_LOGI(TAG, "Successfully received data from all sensors");
+            } else {
+                ESP_LOGW(TAG, "Some sensors did not respond: %d/%d received", 
+                         sensors_get_received_count(), TOTAL_SENSORS);
+            }
+            
+            data_received = true;
+        }
 
         // Increment the counter 
         ESP_ERROR_CHECK(storage_increment_boot_count());
@@ -251,16 +302,13 @@ first_block_init:
         vTaskDelay(pdMS_TO_TICKS(500));
 
 second_block_init:
-
-        // Modem initialization for data sending if it was not initialized
-        if (!network_initialized) {
-            ret = gsm_modem_init();
-            if (ret != ESP_OK) {
-                storage_append_log("GSM modem init failed for data sending");
-                unsuccessful_init();
-            } else {
-                network_initialized = true;
-            }
+        // Modem initialization for data sending
+        ret = gsm_modem_init();
+        if (ret != ESP_OK) {
+            storage_append_log("GSM modem init failed for data sending");
+            unsuccessful_init();
+        } else {
+            network_initialized = true;
         }
 
         // Add time synchronization
@@ -275,7 +323,7 @@ second_block_init:
         storage_set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
 
-        // Firebase API initialization for data sending
+        // Firebase API initialization 
         ret = firebase_init();
         if (ret != ESP_OK) {
             storage_append_log("Firebase init failed for data sending");
@@ -284,20 +332,24 @@ second_block_init:
     
         // Getting measurements from storage and sending them
         if (network_initialized) {
+            // Send data from all sensors to the server
+            ret = send_all_sensor_measurements_to_firebase();
             
-            char *data_to_firebase = storage_get_firestore_measurements();
-            ESP_LOGI(TAG, "Stored firestore data: %s", data_to_firebase);
-            if (data_to_firebase != NULL) {
-                ret = send_final_measurements_to_firebase(data_to_firebase); // Send firebase
-                
-                if (ret == ESP_OK) {
-                    // ESP_ERROR_CHECK(storage_clear_measurements());
-                    // ESP_ERROR_CHECK(storage_clear_firestore_measurements());
-                    ESP_ERROR_CHECK(storage_reset_counter());
-                    data_from_storage_sent = true;
-                } else {
-                    storage_append_log("Failed to send measurements");
-                }
+            if (ret == ESP_OK) {
+                // All files sent successfully
+                storage_append_log("All sensor files sent successfully");
+                ESP_ERROR_CHECK(storage_reset_counter());
+                data_from_storage_sent = true;
+            } else if (ret == ESP_ERR_INVALID_STATE) {
+                // Some files were sent
+                storage_append_log("Some sensor files were not sent");
+                data_from_storage_sent = true;
+            } else if (ret == ESP_ERR_NOT_FOUND) {
+                // Files not found
+                storage_append_log("No sensor files found");
+            } else {
+                // General error
+                storage_append_log("Failed to send any files");
             }
         }
 
@@ -382,6 +434,9 @@ second_block_init:
     // Preparing for sleep
     sleep_prepare:
 #endif
+    // Synchronizing the file system before sleep to ensure the saving of all data
+    ESP_ERROR_CHECK(storage_sync());
+    
     // Calculate execution time and remaining sleep time
     int64_t current_time = esp_timer_get_time();
     int64_t execution_time = current_time - start_time;
@@ -398,6 +453,7 @@ second_block_init:
     esp_sleep_enable_timer_wakeup(sleep_time);
     esp_deep_sleep_start();
 }
+
 
 
 

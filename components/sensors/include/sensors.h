@@ -47,3 +47,31 @@ esp_err_t sensors_stop_scan(void);
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t sensors_deinit(void);
+
+/**
+ * @brief Get the number of sensors from which data has been received
+ * 
+ * @return int Number of sensors with data
+ */
+int sensors_get_received_count(void);
+
+/**
+ * @brief Check if any sensor data has been received
+ * 
+ * @return bool true if data has been received from at least one sensor
+ */
+bool sensors_any_data_received(void);
+
+/**
+ * @brief Get the total number of configured sensors
+ * 
+ * @return int Number of configured sensors
+ */
+int sensors_get_total_count(void);
+
+/**
+ * @brief Reset the status of all sensors
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t sensors_reset_status(void);

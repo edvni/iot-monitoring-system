@@ -38,38 +38,18 @@ esp_err_t storage_increment_boot_count(void);
 
 
 /**
- * @brief Save a measurement to SPIFFS
+ * @brief Save the sensor measurement to SPIFFS
  * 
- * @param measurement Measurement to save
+ * This function implements the mechanism for saving data for working with multiple sensors:
+ * 1. Creates a separate file for each sensor based on the MAC address
+ * 2. Files are named as "/spiffs/sensor_XX_XX_XX_XX_XX_XX.json"
+ * 3. The function storage_get_sensor_files() will later find these files 
+ *    for sending to Firebase
+ * 
+ * @param measurement Structure with measurement data
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement);
-
-
-/**
- * @brief Get the measurements from SPIFFS
- * 
- * @return char* Measurements in JSON format
- * 
- */
-char* storage_get_measurements(void);
-
-
-/**
- * @brief Clear the measurements from SPIFFS
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_clear_measurements(void);
-
-/**
- * @brief Clear the firestore measurements from SPIFFS
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_clear_firestore_measurements(void);
-
-
 
 /**
  * @brief Append a log message to the log file
@@ -115,14 +95,6 @@ bool storage_get_error_flag(void);
 
 
 /**
- * @brief Clear the error flag
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_clear_error_flag(void);
-
-
-/**
  * @brief Set the system state
  * 
  * @param state System state
@@ -156,11 +128,28 @@ esp_err_t storage_mark_first_boot_completed(void);
 
 
 /**
- * @brief Get the stored measurements as a Firestore-formatted JSON string
+ * @brief Get a list of all sensor files in SPIFFS
  * 
- * @return char* Firestore-formatted JSON string of measurements (must be freed by caller), NULL on error
+ * @param file_list Pointer to array of strings that will be filled with file paths
+ * @param file_count Number of files found
+ * @return esp_err_t ESP_OK on success
  */
-char* storage_get_firestore_measurements(void);
+esp_err_t storage_get_sensor_files(char ***file_list, int *file_count);
+
+/**
+ * @brief Free the memory allocated for the sensor file list
+ * 
+ * @param file_list Array of strings containing file paths
+ * @param file_count Number of files in the list
+ */
+void storage_free_sensor_files(char **file_list, int file_count);
+
+/**
+ * @brief Synchronize the file system to ensure all data is written to flash
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_sync(void);
 
 #ifdef __cplusplus
 }
