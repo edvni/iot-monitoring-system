@@ -1,0 +1,36 @@
+project/
+├── CMakeLists.txt
+├── components/
+│   ├── gsm_module/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/
+│   │   │   └── gsm_module.h
+│   │   └── gsm_module.c
+│   ├── json_helper/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/
+│   │   │   └── json_helper.h
+│   │   └── json_helper.c
+│   ├── power_management/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/
+│   │   │   └── power_management.h
+│   │   └── power_management.c
+│   ├── sensors/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/
+│   │   │   └── sensors.h
+│   │   └── sensors.c
+│   ├── cloud_client/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/
+│   │   │   └── cloud_client.h
+│   │   └── cloud_client.c
+│   └── storage/
+│       ├── CMakeLists.txt
+│       ├── include/
+│       │   └── storage.h
+│       └── storage.c
+└── main/
+    ├── CMakeLists.txt
+    └── main.c
