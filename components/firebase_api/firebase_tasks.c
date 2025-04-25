@@ -37,7 +37,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     cJSON *firestore_doc = cJSON_Parse(firestore_data);
     if (!firestore_doc) {
         ESP_LOGE(TAG, "Invalid Firestore format: parse error");
-        free(firestore_data);
+        free((void*)firestore_data);
         return ESP_FAIL;
     }
     
@@ -46,7 +46,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     if (!fields) {
         ESP_LOGE(TAG, "Invalid Firestore format: missing fields");
         cJSON_Delete(firestore_doc);
-        free(firestore_data);
+        free((void*)firestore_data);
         return ESP_FAIL;
     }
     
@@ -54,7 +54,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     if (!tag_id_field) {
         ESP_LOGE(TAG, "Invalid Firestore format: missing tag_id");
         cJSON_Delete(firestore_doc);
-        free(firestore_data);
+        free((void*)firestore_data);
         return ESP_FAIL;
     }
     
@@ -62,7 +62,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     if (!tag_id_value || !tag_id_value->valuestring) {
         ESP_LOGE(TAG, "Invalid Firestore format: invalid tag_id");
         cJSON_Delete(firestore_doc);
-        free(firestore_data);
+        free((void*)firestore_data);
         return ESP_FAIL;
     }
     
@@ -70,7 +70,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     if (!day_field) {
         ESP_LOGE(TAG, "Invalid Firestore format: missing day");
         cJSON_Delete(firestore_doc);
-        free(firestore_data);
+        free((void*)firestore_data);
         return ESP_FAIL;
     }
     
@@ -78,7 +78,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     if (!day_value || !day_value->valuestring) {
         ESP_LOGE(TAG, "Invalid Firestore format: invalid day");
         cJSON_Delete(firestore_doc);
-        free(firestore_data);
+        free((void*)firestore_data);
         return ESP_FAIL;
     }
 
@@ -113,7 +113,7 @@ esp_err_t send_final_measurements_to_firebase(const char *firestore_data) {
     
     // Release resources
     cJSON_Delete(firestore_doc);
-    free(firestore_data);
+    free((void*)firestore_data);
     
     // Check result of sending
     if (result == ESP_OK) {
