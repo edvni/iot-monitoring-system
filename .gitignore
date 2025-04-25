@@ -1,5 +1,10 @@
 build/
-managed_components/
-idf_component.yml
-dependencies.lock
+/dependencies.lock
+/managed_components/
+/idf_component.yml
+main/idf_component.yml
+sdkconfig.old
+sdkconfig.ci
+docs/*
 .vscode/settings.json
+images/*

@@ -1,23 +1,30 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
+//#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #include "storage.h"
+#include "sensors.h"
 #include "system_state.h"
+#include "time_manager.h"
+#include "json_helper.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
 #include "esp_spiffs.h" 
-#include "json_helper.h"
 #include "cJSON.h"
 #include <unistd.h>
 #include <sys/stat.h>
 #include "esp_task_wdt.h" 
 #include "esp_timer.h"
+#include <string.h>
+#include <math.h>
 
 #define SECONDS_PER_DAY     86400    // 24 hours * 60 minutes * 60 second
 #define MEASUREMENTS_FILE   "/spiffs/measurements.json"
+#define FIRESTORE_MEASUREMENTS_FILE "/spiffs/firestore_measurements.json"
 #define WDT_TIMEOUT_LONG    30000    // 30 seconds for initialization
 #define WDT_TIMEOUT_SHORT   5000     // 5 seconds for normal operation
 #define BOOT_COUNT_KEY "boot_count"
 #define ERROR_FLAG_KEY "error_flag"
+#define FIRST_BOOT_KEY "first_boot"
 #define GSM_FIRST_BLOCK_KEY "gsm_first_block"
 #define GSM_SECOND_BLOCK_KEY "gsm_second_block"
 #define GSM_THIRD_BLOCK_KEY "gsm_third_block"
@@ -115,83 +122,178 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        return ESP_ERR_INVALID_STATE;
    }
 
-   ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
-   struct stat st;
-   if (stat(MEASUREMENTS_FILE, &st) == 0) {
-       ESP_LOGI(TAG, "File exists, size: %ld bytes", st.st_size);
-   } else {
-       ESP_LOGI(TAG, "File does not exist, creating new");
-   }
+//    // 1. At first, save in the usual format for compatibility
+//    ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
+//    struct stat st;
+//    if (stat(MEASUREMENTS_FILE, &st) == 0) {
+//        ESP_LOGI(TAG, "File exists, size: %ld bytes", st.st_size);
+//    } else {
+//        ESP_LOGI(TAG, "File does not exist, creating new");
+//    }
 
-   // Read existing measurements
-   cJSON *measurements_array = NULL;
-   FILE* f = fopen(MEASUREMENTS_FILE, "r");
+//    // Read existing measurements
+//    cJSON *measurements_array = NULL;
+//    FILE* f = fopen(MEASUREMENTS_FILE, "r");
    
+//    if (f != NULL) {
+//        fseek(f, 0, SEEK_END);
+//        long fsize = ftell(f);
+//        fseek(f, 0, SEEK_SET);
+
+//        char *json_str = malloc(fsize + 1);
+//        if (json_str != NULL) {
+//            if (fread(json_str, 1, fsize, f) == (size_t)fsize) {
+//                json_str[fsize] = '\0';
+//                measurements_array = cJSON_Parse(json_str);
+//            }
+//            free(json_str);
+//        }
+//        fclose(f);
+//    }
+
+//    if (measurements_array == NULL) {
+//        measurements_array = cJSON_CreateArray();
+//        if (measurements_array == NULL) {
+//            return ESP_ERR_NO_MEM;
+//        }
+//    }
+
+//    ESP_LOGI(TAG, "Array size before adding: %d", cJSON_GetArraySize(measurements_array));
+
+//    // Add new measurement (using the standard format for compatibility)
+//    cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
+//    if (measurement_obj == NULL || !cJSON_AddItemToArray(measurements_array, measurement_obj)) {
+//        cJSON_Delete(measurements_array);
+//        return ESP_FAIL;
+//    }
+
+//    ESP_LOGI(TAG, "Array size after adding: %d", cJSON_GetArraySize(measurements_array));
+
+//    // Save updated array
+//    char *new_json_str = cJSON_PrintUnformatted(measurements_array);
+//    cJSON_Delete(measurements_array);
+
+//    if (new_json_str == NULL) {
+//        return ESP_ERR_NO_MEM;
+//    }
+
+//    f = fopen(MEASUREMENTS_FILE, "w");
+//    if (f == NULL) {
+//        free(new_json_str);
+//        return ESP_FAIL;
+//    }
+
+//    fprintf(f, "%s", new_json_str);
+//    fclose(f);
+//    free(new_json_str);
+
+   // 2. Now save in Firestore format
+   ESP_LOGI(TAG, "Saving in Firestore format to: %s", FIRESTORE_MEASUREMENTS_FILE);
+   
+   // Load existing Firestore structure file if it exists
+   cJSON *firestore_doc = NULL;
+   FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
    if (f != NULL) {
+       // If the file exists, load the structure
        fseek(f, 0, SEEK_END);
        long fsize = ftell(f);
        fseek(f, 0, SEEK_SET);
 
-       char *json_str = malloc(fsize + 1);
-       if (json_str != NULL) {
-           if (fread(json_str, 1, fsize, f) == (size_t)fsize) {
-               json_str[fsize] = '\0';
-               measurements_array = cJSON_Parse(json_str);
+       if (fsize > 0) {
+           char *firestore_str = malloc(fsize + 1);
+           if (firestore_str != NULL) {
+               if (fread(firestore_str, 1, fsize, f) == (size_t)fsize) {
+                   firestore_str[fsize] = '\0';
+                   firestore_doc = cJSON_Parse(firestore_str);
+               }
+               free(firestore_str);
            }
-           free(json_str);
        }
        fclose(f);
    }
-
-   if (measurements_array == NULL) {
-       measurements_array = cJSON_CreateArray();
-       if (measurements_array == NULL) {
-           return ESP_ERR_NO_MEM;
-       }
-   }
-
-   ESP_LOGI(TAG, "Array size before adding: %d", cJSON_GetArraySize(measurements_array));
-
-   // Add new measurement
-   cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
-   if (measurement_obj == NULL || !cJSON_AddItemToArray(measurements_array, measurement_obj)) {
-       cJSON_Delete(measurements_array);
+   
+   // Create or update Firestore document
+   firestore_doc = json_helper_create_or_update_firestore_document(firestore_doc, measurement->mac_address);
+   if (firestore_doc == NULL) {
+       ESP_LOGE(TAG, "Failed to create Firestore document");
        return ESP_FAIL;
    }
-
-   ESP_LOGI(TAG, "Array size after adding: %d", cJSON_GetArraySize(measurements_array));
-
-   // Save updated array
-   char *new_json_str = cJSON_PrintUnformatted(measurements_array);
-   cJSON_Delete(measurements_array);
-
-   if (new_json_str == NULL) {
+   
+   // Add measurement to the document
+   esp_err_t result = json_helper_add_measurement_to_firestore(firestore_doc, measurement);
+   if (result != ESP_OK) {
+       ESP_LOGE(TAG, "Failed to add measurement to Firestore document");
+       cJSON_Delete(firestore_doc);
+       return result;
+   }
+   
+   // Get the size of the measurements array for logging
+   cJSON *fields = cJSON_GetObjectItem(firestore_doc, "fields");
+   cJSON *measurements = cJSON_GetObjectItem(fields, "measurements");
+   cJSON *array_value = cJSON_GetObjectItem(measurements, "arrayValue");
+   cJSON *values = cJSON_GetObjectItem(array_value, "values");
+   ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values));
+   
+   // Save the updated Firestore structure
+   char *firestore_json_str = cJSON_PrintUnformatted(firestore_doc);
+   cJSON_Delete(firestore_doc);
+   
+   if (firestore_json_str == NULL) {
        return ESP_ERR_NO_MEM;
    }
-
-   f = fopen(MEASUREMENTS_FILE, "w");
+   
+   f = fopen(FIRESTORE_MEASUREMENTS_FILE, "w");
    if (f == NULL) {
-       free(new_json_str);
+       free(firestore_json_str);
        return ESP_FAIL;
    }
-
-   fprintf(f, "%s", new_json_str);
+   
+   fprintf(f, "%s", firestore_json_str);
    fclose(f);
-   // ESP_LOGI(TAG, "Saved data: %s", new_json_str);
-   free(new_json_str);
-
-   // Verify file
-   f = fopen(MEASUREMENTS_FILE, "r");
-   if (f != NULL) {
-       fseek(f, 0, SEEK_END);
-       long size = ftell(f);
-       fclose(f);
-       ESP_LOGI(TAG, "File verification: size = %ld bytes", size);
+   free(firestore_json_str);
+   
+   // Check files
+   struct stat st_firestore;
+   if (stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
+       ESP_LOGI(TAG, "Files saved - Firestore: %ld bytes", st_firestore.st_size);
    } else {
        ESP_LOGE(TAG, "File verification failed!");
    }
 
    return ESP_OK;
+}
+
+// Getting the Firestore-formatted measurements from SPIFFS
+char* storage_get_firestore_measurements(void) {
+   if (!check_spiffs_status()) {
+       return NULL;
+   }
+
+   FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
+   if (f == NULL) {
+       ESP_LOGE(TAG, "No Firestore measurements file found");
+       return NULL;
+   }
+
+   fseek(f, 0, SEEK_END);
+   long fsize = ftell(f);
+   fseek(f, 0, SEEK_SET);
+
+   char *json_str = malloc(fsize + 1);
+   if (json_str == NULL) {
+       fclose(f);
+       return NULL;
+   }
+
+   if (fread(json_str, 1, fsize, f) != (size_t)fsize) {
+       free(json_str);
+       fclose(f);
+       return NULL;
+   }
+
+   fclose(f);
+   json_str[fsize] = '\0';
+   return json_str;
 }
 
 // Getting the measurements from SPIFFS
@@ -231,9 +333,14 @@ char* storage_get_measurements(void) {
 esp_err_t storage_clear_measurements(void) {
    return check_spiffs_status() ? unlink(MEASUREMENTS_FILE) : ESP_ERR_INVALID_STATE;
 }
+// Cleaning the measurements from SPIFFS
+esp_err_t storage_clear_firestore_measurements(void) {
+   return check_spiffs_status() ? unlink(FIRESTORE_MEASUREMENTS_FILE) : ESP_ERR_INVALID_STATE;
+}
 
 // Storaging the logs in SPIFFS
 esp_err_t storage_append_log(const char* log_message) {
+    #if DISCORD_LOGGING
     if (!check_spiffs_status()) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -251,12 +358,14 @@ esp_err_t storage_append_log(const char* log_message) {
     uint32_t boot_count = storage_get_boot_count();
     fprintf(f, "[Boot:%lu][%lld] %s\n", boot_count, (long long)(esp_timer_get_time() / 1000000), log_message);
     fclose(f);
+    #endif
     
     return ESP_OK;
 }
 
 // Getting the logs from SPIFFS
 char* storage_get_logs(void) {
+    #if DISCORD_LOGGING
     static const char* TAG = "storage";
     
     if (!check_spiffs_status()) {
@@ -343,6 +452,9 @@ char* storage_get_logs(void) {
     ESP_LOGI(TAG, "Successfully read %zu bytes from log file", total_read);
     
     return log_str;
+    #else
+    return NULL;
+    #endif
 }
 
 
@@ -380,5 +492,16 @@ system_state_t storage_get_system_state(void) {
     uint8_t state = STATE_NORMAL;
     esp_err_t ret = nvs_get_u8(my_nvs_handle, "system_state", &state);
     return (ret == ESP_OK) ? (system_state_t)state : STATE_NORMAL;
+}
+
+bool storage_is_first_boot(void) {
+    uint8_t first_boot = 0;
+    esp_err_t ret = nvs_get_u8(my_nvs_handle, FIRST_BOOT_KEY, &first_boot);
+    return (ret == ESP_ERR_NVS_NOT_FOUND || first_boot == 0);
+}
+
+esp_err_t storage_mark_first_boot_completed(void) {
+    esp_err_t ret = nvs_set_u8(my_nvs_handle, FIRST_BOOT_KEY, 1);
+    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
 }
 

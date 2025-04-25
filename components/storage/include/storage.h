@@ -62,6 +62,13 @@ char* storage_get_measurements(void);
  */
 esp_err_t storage_clear_measurements(void);
 
+/**
+ * @brief Clear the firestore measurements from SPIFFS
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_clear_firestore_measurements(void);
+
 
 
 /**
@@ -132,8 +139,31 @@ esp_err_t storage_set_system_state(system_state_t state);
 system_state_t storage_get_system_state(void);
 
 
+/**
+ * @brief Check if this is the first boot ever
+ * 
+ * @return bool true if this is the first boot
+ */
+bool storage_is_first_boot(void);
+
+
+/**
+ * @brief Mark that first boot has been completed
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_mark_first_boot_completed(void);
+
+
+/**
+ * @brief Get the stored measurements as a Firestore-formatted JSON string
+ * 
+ * @return char* Firestore-formatted JSON string of measurements (must be freed by caller), NULL on error
+ */
+char* storage_get_firestore_measurements(void);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* STORAGE_H */
+#endif 
