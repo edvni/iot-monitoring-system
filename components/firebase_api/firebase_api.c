@@ -27,12 +27,11 @@
 #define HTTP_TX_BUFFER_SIZE 13824  
 #define MAX_HTTP_RETRIES 3         // Maximum number of retry attempts
 
-// Буфер для разбивки JSON на части
-#define STREAM_CHUNK_SIZE 2048
-static char stream_buffer[STREAM_CHUNK_SIZE];
-static const char *current_json_data = NULL;
-static size_t json_data_len = 0;
-static size_t json_data_pos = 0;
+// #define STREAM_CHUNK_SIZE 2048
+// static char stream_buffer[STREAM_CHUNK_SIZE];
+// static const char *current_json_data = NULL;
+// static size_t json_data_len = 0;
+// static size_t json_data_pos = 0;
 
 static const char *TAG = "firebase_api";
 
