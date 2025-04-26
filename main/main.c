@@ -2,7 +2,7 @@
 
 // Global logging definitions. If true, logging will be enabled.
 #define DISCORD_LOGGING false
-#define SYSTEM_LOGGING true
+#define SYSTEM_LOGGING false
 
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -36,7 +36,7 @@ static const char *TAG = "main";
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
 #define SECONDS_IN_MICROS 1000000ULL
 #define SEND_DATA_CYCLE 144  // For testing 3
-#define TRIGGER_INTERVAL    (3 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
+#define TRIGGER_INTERVAL    (60 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
 
 
 // Main function
