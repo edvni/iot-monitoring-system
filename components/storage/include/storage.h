@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "sensors.h"
 #include <stdint.h>
-#include "system_state.h"
+#include "system_states.h"
 
 
 #ifdef __cplusplus
@@ -20,56 +20,19 @@ extern "C" {
  */
 esp_err_t storage_init(void);
 
-
 /**
- * @brief Get the boot count from NVS
+ * @brief Save the sensor measurement to SPIFFS
  * 
- * @return uint32_t Boot count
- */
-uint32_t storage_get_boot_count(void);
-
-
-/**
- * @brief Increment the boot count and save it to NVS
+ * This function implements the mechanism for saving data for working with multiple sensors:
+ * 1. Creates a separate file for each sensor based on the MAC address
+ * 2. Files are named as "/spiffs/sensor_XX_XX_XX_XX_XX_XX.json"
+ * 3. The function storage_get_sensor_files() will later find these files 
+ *    for sending to Firebase
  * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_increment_boot_count(void);
-
-
-/**
- * @brief Save a measurement to SPIFFS
- * 
- * @param measurement Measurement to save
+ * @param measurement Structure with measurement data
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement);
-
-
-/**
- * @brief Get the measurements from SPIFFS
- * 
- * @return char* Measurements in JSON format
- * 
- */
-char* storage_get_measurements(void);
-
-
-/**
- * @brief Clear the measurements from SPIFFS
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_clear_measurements(void);
-
-/**
- * @brief Clear the firestore measurements from SPIFFS
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_clear_firestore_measurements(void);
-
-
 
 /**
  * @brief Append a log message to the log file
@@ -88,79 +51,29 @@ esp_err_t storage_append_log(const char* log_message);
  */
 char* storage_get_logs(void);
 
-
+/**
+ * @brief Get a list of all sensor files in SPIFFS
+ * 
+ * @param file_list Pointer to array of strings that will be filled with file paths
+ * @param file_count Number of files found
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t storage_get_sensor_files(char ***file_list, int *file_count);
 
 /**
- * @brief Reset the boot counter
+ * @brief Free the memory allocated for the sensor file list
+ * 
+ * @param file_list Array of strings containing file paths
+ * @param file_count Number of files in the list
+ */
+void storage_free_sensor_files(char **file_list, int file_count);
+
+/**
+ * @brief Synchronize the file system to ensure all data is written to flash
  * 
  * @return esp_err_t ESP_OK on success
  */
-esp_err_t storage_reset_counter(void);
-
-
-/**
- * @brief Set the error flag if error occurred in last cycle
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_set_error_flag(void);
-
-
-/**
- * @brief Get the error flag
- * 
- * @return bool Error flag
- */
-bool storage_get_error_flag(void);
-
-
-/**
- * @brief Clear the error flag
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_clear_error_flag(void);
-
-
-/**
- * @brief Set the system state
- * 
- * @param state System state
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_set_system_state(system_state_t state);
-
-
-/**
- * @brief Get the system state
- * 
- * @return system_state_t System state
- */
-system_state_t storage_get_system_state(void);
-
-
-/**
- * @brief Check if this is the first boot ever
- * 
- * @return bool true if this is the first boot
- */
-bool storage_is_first_boot(void);
-
-
-/**
- * @brief Mark that first boot has been completed
- * 
- * @return esp_err_t ESP_OK on success
- */
-esp_err_t storage_mark_first_boot_completed(void);
-
-
-/**
- * @brief Get the stored measurements as a Firestore-formatted JSON string
- * 
- * @return char* Firestore-formatted JSON string of measurements (must be freed by caller), NULL on error
- */
-char* storage_get_firestore_measurements(void);
+esp_err_t storage_sync(void);
 
 #ifdef __cplusplus
 }

@@ -2,7 +2,7 @@
 //#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #include "storage.h"
 #include "sensors.h"
-#include "system_state.h"
+#include "system_states.h"
 #include "time_manager.h"
 #include "json_helper.h"
 #include "nvs_flash.h"
@@ -16,19 +16,9 @@
 #include "esp_timer.h"
 #include <string.h>
 #include <math.h>
+#include <dirent.h> 
 
-#define SECONDS_PER_DAY     86400    // 24 hours * 60 minutes * 60 second
-#define MEASUREMENTS_FILE   "/spiffs/measurements.json"
-#define FIRESTORE_MEASUREMENTS_FILE "/spiffs/firestore_measurements.json"
-#define WDT_TIMEOUT_LONG    30000    // 30 seconds for initialization
-#define WDT_TIMEOUT_SHORT   5000     // 5 seconds for normal operation
-#define BOOT_COUNT_KEY "boot_count"
-#define ERROR_FLAG_KEY "error_flag"
 #define FIRST_BOOT_KEY "first_boot"
-#define GSM_FIRST_BLOCK_KEY "gsm_first_block"
-#define GSM_SECOND_BLOCK_KEY "gsm_second_block"
-#define GSM_THIRD_BLOCK_KEY "gsm_third_block"
-#define LAST_TRIGGER_TIME_KEY "last_trigger_time"
 
 static const char *TAG = "STORAGE";
 static nvs_handle_t my_nvs_handle;
@@ -72,32 +62,6 @@ esp_err_t storage_init(void) {
    return ESP_OK;
 }
 
-// -------------------- NVS operations for boot count -------------------- //
-
-// Get the boot count from NVS
-uint32_t storage_get_boot_count(void) {
-   uint32_t boot_count = 0;
-   if (nvs_get_u32(my_nvs_handle, "boot_count", &boot_count) == ESP_ERR_NVS_NOT_FOUND) {
-       ESP_LOGI(TAG, "Boot count not found, starting from 0");
-   }
-   return boot_count;
-}
-
-// Increment the boot count and save it to NVS
-esp_err_t storage_increment_boot_count(void) {
-   uint32_t boot_count = storage_get_boot_count() + 1;
-   esp_err_t ret = nvs_set_u32(my_nvs_handle, "boot_count", boot_count);
-   return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
-}
-
-// Reset the boot count to 0
-esp_err_t storage_reset_counter(void) {
-   
-    esp_err_t ret = nvs_set_u32(my_nvs_handle, "boot_count", 0);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
-
-}
-
 // -------------------- SPIFFS operations for measurements -------------------- //
 
 // Check SPIFFS status
@@ -116,83 +80,38 @@ static bool check_spiffs_status(void) {
    return true;
 }
 
-// Save a measurement to SPIFFS
+// function for generating a file name based on the MAC address
+static void generate_sensor_filename(char *filename, size_t max_length, const char *mac_address) {
+    char formatted_mac[18];
+    
+    // Replace colons with underscores to create a valid file name
+    strncpy(formatted_mac, mac_address, sizeof(formatted_mac));
+    for (int i = 0; i < strlen(formatted_mac); i++) {
+        if (formatted_mac[i] == ':') {
+            formatted_mac[i] = '_';
+        }
+    }
+    
+    // Forming the file path
+    snprintf(filename, max_length, "/spiffs/sensor_%s.json", formatted_mac);
+}
+
+
+// Saving the measurement to SPIFFS
 esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    if (!check_spiffs_status()) {
        return ESP_ERR_INVALID_STATE;
    }
 
-//    // 1. At first, save in the usual format for compatibility
-//    ESP_LOGI(TAG, "Attempting to read file: %s", MEASUREMENTS_FILE);
-//    struct stat st;
-//    if (stat(MEASUREMENTS_FILE, &st) == 0) {
-//        ESP_LOGI(TAG, "File exists, size: %ld bytes", st.st_size);
-//    } else {
-//        ESP_LOGI(TAG, "File does not exist, creating new");
-//    }
-
-//    // Read existing measurements
-//    cJSON *measurements_array = NULL;
-//    FILE* f = fopen(MEASUREMENTS_FILE, "r");
+   // Generating a file name based on the MAC address
+   char sensor_filename[64];
+   generate_sensor_filename(sensor_filename, sizeof(sensor_filename), measurement->mac_address);
    
-//    if (f != NULL) {
-//        fseek(f, 0, SEEK_END);
-//        long fsize = ftell(f);
-//        fseek(f, 0, SEEK_SET);
+   ESP_LOGI(TAG, "Saving measurement from %s to file: %s", measurement->mac_address, sensor_filename);
 
-//        char *json_str = malloc(fsize + 1);
-//        if (json_str != NULL) {
-//            if (fread(json_str, 1, fsize, f) == (size_t)fsize) {
-//                json_str[fsize] = '\0';
-//                measurements_array = cJSON_Parse(json_str);
-//            }
-//            free(json_str);
-//        }
-//        fclose(f);
-//    }
-
-//    if (measurements_array == NULL) {
-//        measurements_array = cJSON_CreateArray();
-//        if (measurements_array == NULL) {
-//            return ESP_ERR_NO_MEM;
-//        }
-//    }
-
-//    ESP_LOGI(TAG, "Array size before adding: %d", cJSON_GetArraySize(measurements_array));
-
-//    // Add new measurement (using the standard format for compatibility)
-//    cJSON *measurement_obj = json_helper_create_measurement_object(measurement);
-//    if (measurement_obj == NULL || !cJSON_AddItemToArray(measurements_array, measurement_obj)) {
-//        cJSON_Delete(measurements_array);
-//        return ESP_FAIL;
-//    }
-
-//    ESP_LOGI(TAG, "Array size after adding: %d", cJSON_GetArraySize(measurements_array));
-
-//    // Save updated array
-//    char *new_json_str = cJSON_PrintUnformatted(measurements_array);
-//    cJSON_Delete(measurements_array);
-
-//    if (new_json_str == NULL) {
-//        return ESP_ERR_NO_MEM;
-//    }
-
-//    f = fopen(MEASUREMENTS_FILE, "w");
-//    if (f == NULL) {
-//        free(new_json_str);
-//        return ESP_FAIL;
-//    }
-
-//    fprintf(f, "%s", new_json_str);
-//    fclose(f);
-//    free(new_json_str);
-
-   // 2. Now save in Firestore format
-   ESP_LOGI(TAG, "Saving in Firestore format to: %s", FIRESTORE_MEASUREMENTS_FILE);
-   
-   // Load existing Firestore structure file if it exists
+   // Loading the existing Firestore structure, if it exists
    cJSON *firestore_doc = NULL;
-   FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
+   FILE* f = fopen(sensor_filename, "r");
    if (f != NULL) {
        // If the file exists, load the structure
        fseek(f, 0, SEEK_END);
@@ -212,14 +131,14 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        fclose(f);
    }
    
-   // Create or update Firestore document
+   // Creating or updating the Firestore document
    firestore_doc = json_helper_create_or_update_firestore_document(firestore_doc, measurement->mac_address);
    if (firestore_doc == NULL) {
        ESP_LOGE(TAG, "Failed to create Firestore document");
        return ESP_FAIL;
    }
    
-   // Add measurement to the document
+   // Adding the measurement to the document
    esp_err_t result = json_helper_add_measurement_to_firestore(firestore_doc, measurement);
    if (result != ESP_OK) {
        ESP_LOGE(TAG, "Failed to add measurement to Firestore document");
@@ -227,14 +146,14 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        return result;
    }
    
-   // Get the size of the measurements array for logging
+   // Getting the size of the measurements array for logging
    cJSON *fields = cJSON_GetObjectItem(firestore_doc, "fields");
    cJSON *measurements = cJSON_GetObjectItem(fields, "measurements");
    cJSON *array_value = cJSON_GetObjectItem(measurements, "arrayValue");
    cJSON *values = cJSON_GetObjectItem(array_value, "values");
    ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values));
    
-   // Save the updated Firestore structure
+   // Saving the updated Firestore structure
    char *firestore_json_str = cJSON_PrintUnformatted(firestore_doc);
    cJSON_Delete(firestore_doc);
    
@@ -242,7 +161,7 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
        return ESP_ERR_NO_MEM;
    }
    
-   f = fopen(FIRESTORE_MEASUREMENTS_FILE, "w");
+   f = fopen(sensor_filename, "w");
    if (f == NULL) {
        free(firestore_json_str);
        return ESP_FAIL;
@@ -252,90 +171,15 @@ esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
    fclose(f);
    free(firestore_json_str);
    
-   // Check files
-   struct stat st_firestore;
-   if (stat(FIRESTORE_MEASUREMENTS_FILE, &st_firestore) == 0) {
-       ESP_LOGI(TAG, "Files saved - Firestore: %ld bytes", st_firestore.st_size);
+   // Checking the file
+   struct stat st;
+   if (stat(sensor_filename, &st) == 0) {
+       ESP_LOGI(TAG, "File saved for sensor %s: %ld bytes", measurement->mac_address, st.st_size);
    } else {
        ESP_LOGE(TAG, "File verification failed!");
    }
 
    return ESP_OK;
-}
-
-// Getting the Firestore-formatted measurements from SPIFFS
-char* storage_get_firestore_measurements(void) {
-   if (!check_spiffs_status()) {
-       return NULL;
-   }
-
-   FILE* f = fopen(FIRESTORE_MEASUREMENTS_FILE, "r");
-   if (f == NULL) {
-       ESP_LOGE(TAG, "No Firestore measurements file found");
-       return NULL;
-   }
-
-   fseek(f, 0, SEEK_END);
-   long fsize = ftell(f);
-   fseek(f, 0, SEEK_SET);
-
-   char *json_str = malloc(fsize + 1);
-   if (json_str == NULL) {
-       fclose(f);
-       return NULL;
-   }
-
-   if (fread(json_str, 1, fsize, f) != (size_t)fsize) {
-       free(json_str);
-       fclose(f);
-       return NULL;
-   }
-
-   fclose(f);
-   json_str[fsize] = '\0';
-   return json_str;
-}
-
-// Getting the measurements from SPIFFS
-char* storage_get_measurements(void) {
-   if (!check_spiffs_status()) {
-       return NULL;
-   }
-
-   FILE* f = fopen(MEASUREMENTS_FILE, "r");
-   if (f == NULL) {
-       ESP_LOGE(TAG, "No measurements file found");
-       return NULL;
-   }
-
-   fseek(f, 0, SEEK_END);
-   long fsize = ftell(f);
-   fseek(f, 0, SEEK_SET);
-
-   char *json_str = malloc(fsize + 1);
-   if (json_str == NULL) {
-       fclose(f);
-       return NULL;
-   }
-
-   if (fread(json_str, 1, fsize, f) != (size_t)fsize) {
-       free(json_str);
-       fclose(f);
-       return NULL;
-   }
-
-   fclose(f);
-   json_str[fsize] = '\0';
-   return json_str;
-}
-
-// Cleaning the measurements from SPIFFS
-esp_err_t storage_clear_measurements(void) {
-   return check_spiffs_status() ? unlink(MEASUREMENTS_FILE) : ESP_ERR_INVALID_STATE;
-}
-// Cleaning the measurements from SPIFFS
-esp_err_t storage_clear_firestore_measurements(void) {
-   return check_spiffs_status() ? unlink(FIRESTORE_MEASUREMENTS_FILE) : ESP_ERR_INVALID_STATE;
 }
 
 // Storaging the logs in SPIFFS
@@ -355,7 +199,7 @@ esp_err_t storage_append_log(const char* log_message) {
     }
     
     // Adding a timestamp and a message
-    uint32_t boot_count = storage_get_boot_count();
+    uint32_t boot_count = get_boot_count();
     fprintf(f, "[Boot:%lu][%lld] %s\n", boot_count, (long long)(esp_timer_get_time() / 1000000), log_message);
     fclose(f);
     #endif
@@ -457,51 +301,85 @@ char* storage_get_logs(void) {
     #endif
 }
 
-
-// -------------------- Error flag operations -------------------- //
-
-// Setting the error flag
-esp_err_t storage_set_error_flag(void) {
-    esp_err_t ret = nvs_set_u8(my_nvs_handle, "error_flag", 1);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
+// Function for getting a list of sensor files
+esp_err_t storage_get_sensor_files(char ***file_list, int *file_count) {
+    if (!check_spiffs_status()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Temporarily set the maximum number of files
+    const int MAX_FILES = 10;
+    char **files = malloc(MAX_FILES * sizeof(char*));
+    if (files == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Initialize the file counter
+    *file_count = 0;
+    
+    // Opening the SPIFFS directory
+    DIR *dir = opendir("/spiffs");
+    if (dir == NULL) {
+        ESP_LOGE(TAG, "Failed to open SPIFFS directory");
+        free(files);
+        return ESP_FAIL;
+    }
+    
+    // Reading the directory content
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL && *file_count < MAX_FILES) {
+        // Checking if the file starts with "sensor_"
+        if (strncmp(entry->d_name, "sensor_", 7) == 0) {
+            // Allocating memory for the file name and copying it
+            char *filename = malloc(strlen(entry->d_name) + 9); // +9 для "/spiffs/" и '\0'
+            if (filename) {
+                sprintf(filename, "/spiffs/%s", entry->d_name);
+                files[*file_count] = filename;
+                (*file_count)++;
+                ESP_LOGI(TAG, "Found sensor file: %s", filename);
+            }
+        }
+    }
+    
+    closedir(dir);
+    
+    // If no files are found
+    if (*file_count == 0) {
+        free(files);
+        *file_list = NULL;
+        return ESP_OK;
+    }
+    
+    // Setting the pointer to the list of files
+    *file_list = files;
+    
+    return ESP_OK;
 }
 
-// Getting the error flag
-bool storage_get_error_flag(void) {
-    uint8_t flag = 0;
-    esp_err_t ret = nvs_get_u8(my_nvs_handle, "error_flag", &flag);
-    return (ret == ESP_OK && flag == 1);
+// Clearing the list of sensor files
+void storage_free_sensor_files(char **file_list, int file_count) {
+    if (file_list) {
+        for (int i = 0; i < file_count; i++) {
+            if (file_list[i]) {
+                free(file_list[i]);
+            }
+        }
+        free(file_list);
+    }
 }
 
-// Clearing the error flag
-esp_err_t storage_clear_error_flag(void) {
-    esp_err_t ret = nvs_set_u8(my_nvs_handle, "error_flag", 0);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
-}
-
-// -------------------- System state operations -------------------- //
-
-
-esp_err_t storage_set_system_state(system_state_t state) {
-    esp_err_t ret = nvs_set_u8(my_nvs_handle, "system_state", (uint8_t)state);
-    if (ret != ESP_OK) return ret;
-    return nvs_commit(my_nvs_handle);
-}
-
-system_state_t storage_get_system_state(void) {
-    uint8_t state = STATE_NORMAL;
-    esp_err_t ret = nvs_get_u8(my_nvs_handle, "system_state", &state);
-    return (ret == ESP_OK) ? (system_state_t)state : STATE_NORMAL;
-}
-
-bool storage_is_first_boot(void) {
-    uint8_t first_boot = 0;
-    esp_err_t ret = nvs_get_u8(my_nvs_handle, FIRST_BOOT_KEY, &first_boot);
-    return (ret == ESP_ERR_NVS_NOT_FOUND || first_boot == 0);
-}
-
-esp_err_t storage_mark_first_boot_completed(void) {
-    esp_err_t ret = nvs_set_u8(my_nvs_handle, FIRST_BOOT_KEY, 1);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
+// Synchronizing the file system
+esp_err_t storage_sync(void) {
+    ESP_LOGI(TAG, "Synchronizing file system");
+    FILE *f = fopen("/spiffs/.sync", "w");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for sync");
+        return ESP_FAIL;
+    }
+    fprintf(f, "sync");
+    fsync(fileno(f));
+    fclose(f);
+    unlink("/spiffs/.sync");
+    return ESP_OK;
 }
 

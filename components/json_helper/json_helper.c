@@ -6,52 +6,82 @@
 #include <string.h>
 #include <math.h>
 
+static const char *TAG = "json_helper";
 
-// // Create a JSON object from a measurement
-// cJSON* json_helper_create_measurement_object(ruuvi_measurement_t *measurement) {
-//     cJSON *measurement_obj = cJSON_CreateObject();
-//     if (measurement_obj == NULL) {
-//         ESP_LOGE(TAG, "Failed to create measurement object");
-//         return NULL;
-//     }
+// Extracts MAC address from Firestore JSON document
+esp_err_t json_helper_extract_mac_address(const char *json_data, char *mac_address, size_t mac_address_len) {
+    if (!json_data || !mac_address || mac_address_len < 18) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Parsing JSON to extract MAC address
+    cJSON *root = cJSON_Parse(json_data);
+    if (!root) {
+        ESP_LOGE(TAG, "Failed to parse JSON data");
+        return ESP_FAIL;
+    }
+    
+    // Extracting MAC address from JSON document
+    cJSON *fields = cJSON_GetObjectItem(root, "fields");
+    if (!fields) {
+        ESP_LOGE(TAG, "No 'fields' object in JSON");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
+    // Trying to get MAC address first from "macAddress" field, then from "tag_id"
+    cJSON *mac_obj = cJSON_GetObjectItem(fields, "macAddress");
+    if (!mac_obj) {
+        // If there is no "macAddress" field, try to find "tag_id"
+        mac_obj = cJSON_GetObjectItem(fields, "tag_id");
+        if (!mac_obj) {
+            ESP_LOGE(TAG, "Neither 'macAddress' nor 'tag_id' field found in JSON");
+            cJSON_Delete(root);
+            return ESP_FAIL;
+        }
+        ESP_LOGI(TAG, "Using 'tag_id' field for MAC address");
+    } else {
+        ESP_LOGI(TAG, "Using 'macAddress' field for MAC address");
+    }
+    
+    cJSON *string_value = cJSON_GetObjectItem(mac_obj, "stringValue");
+    if (!string_value || !cJSON_IsString(string_value)) {
+        ESP_LOGE(TAG, "Invalid MAC address format in JSON");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
+    strncpy(mac_address, string_value->valuestring, mac_address_len - 1);
+    mac_address[mac_address_len - 1] = '\0';
+    
+    cJSON_Delete(root);
+    return ESP_OK;
+}
 
-//     // Buffer for time
-//     char time_str[32];
-//     if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
-//         strcpy(time_str, "Time not available");
-//     }
+// Formats MAC address, replacing colons with underscores
+void json_helper_format_mac_address(const char *mac_address, char *formatted_mac, size_t formatted_mac_len) {
+    if (!mac_address || !formatted_mac || formatted_mac_len == 0) {
+        return;
+    }
+    
+    strncpy(formatted_mac, mac_address, formatted_mac_len - 1);
+    formatted_mac[formatted_mac_len - 1] = '\0';
+    
+    for (int i = 0; i < strlen(formatted_mac); i++) {
+        if (formatted_mac[i] == ':') {
+            formatted_mac[i] = '_';
+        }
+    }
+}
 
-//     // Add time stamp
-//     cJSON_AddStringToObject(measurement_obj, "time", time_str);
-
-//     // Existing fields
-//     char temp_str[10];
-//     char hum_str[10];
-//     //char mac_str[18];
-//     sprintf(temp_str, "%.2f", measurement->temperature);
-//     snprintf(hum_str, sizeof(hum_str), "%.2f", measurement->humidity);
-//     //snprintf(mac_str, sizeof(mac_str), "%s", measurement->mac_address);
-//     cJSON_AddStringToObject(measurement_obj, "t", temp_str);
-//     cJSON_AddStringToObject(measurement_obj, "h", hum_str);
-//     // cJSON_AddStringToObject(measurement_obj, "mac", mac_str);
-
-//     return measurement_obj;
-// }
-
-
-// // Transforming one measurement to JSON string
-// char* json_helper_measurement_to_string(ruuvi_measurement_t *measurement) {
-//     cJSON *obj = json_helper_create_measurement_object(measurement);
-//     if (obj == NULL) {
-//         return NULL;
-//     }
-
-//     char *string = cJSON_PrintUnformatted(obj);
-//     cJSON_Delete(obj);
-
-//     return string;
-// }
-
+// Generates a document ID based on date and MAC address
+void json_helper_generate_document_id(const char *time_str, const char *formatted_mac, char *document_id, size_t document_id_len) {
+    if (!time_str || !formatted_mac || !document_id || document_id_len == 0) {
+        return;
+    }
+    
+    snprintf(document_id, document_id_len, "%s_%s", time_str, formatted_mac);
+}
 
 // Creates a new Firestore document structure or updates an existing one
 cJSON* json_helper_create_or_update_firestore_document(cJSON* existing_doc, const char* mac_address) {
@@ -134,16 +164,6 @@ esp_err_t json_helper_add_measurement_to_firestore(cJSON* firestore_doc, ruuvi_m
     if (time_manager_get_formatted_time(time_str, sizeof(time_str)) != ESP_OK) {
         strcpy(time_str, "Time not available");
     }
-    
-    // Extract only time (last 8 characters, if available)
-    // char timestamp[9] = {0};
-    // if (strlen(time_str) >= 19) {
-    //     strncpy(timestamp, time_str + 11, 8);
-    //     timestamp[8] = '\0';
-    // } else {
-    //     strncpy(timestamp, time_str, 8);
-    //     timestamp[8] = '\0';
-    // }
     
     // Create an object for the measurement
     cJSON *measurement_map_obj = cJSON_CreateObject();

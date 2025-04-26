@@ -16,6 +16,13 @@ extern "C" {
  */
 esp_err_t reporter_format_initial_message(char *message, size_t message_size);
 
+/**
+ * @brief Sending a report to Discord
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t sending_report_to_discord(void);
+
 #ifdef __cplusplus
 }
 #endif 

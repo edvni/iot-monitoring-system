@@ -4,6 +4,20 @@
 #include "jwt_util.h"
 #include "firebase_cert.h"
 #include "time_manager.h"
+#include "json_helper.h"
+
+/**
+ * @file firebase_api.c
+ * @brief Implementation of the Firebase API with optimized memory usage
+ * 
+ * This module uses dynamic memory allocation in the heap (heap) instead of
+ * local buffers on the stack to prevent stack overflow when processing data
+ * from multiple sensors. The main principles:
+ * 
+ * 1. All large buffers are allocated through heap_caps_malloc() with subsequent freeing
+ * 2. After each HTTP operation, a pause is inserted to release resources
+ * 3. Buffers are freed as soon as possible after use
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -23,15 +37,7 @@
 
 #define ESP_TLS_VER_TLS_1_2 0x0303 /* TLS 1.2 */
 #define ESP_TLS_VER_TLS_1_3 0x0304 /* TLS 1.3 */
-#define HTTP_RX_BUFFER_SIZE 8192   
-#define HTTP_TX_BUFFER_SIZE 13824  
-#define MAX_HTTP_RETRIES 3         // Maximum number of retry attempts
 
-// #define STREAM_CHUNK_SIZE 2048
-// static char stream_buffer[STREAM_CHUNK_SIZE];
-// static const char *current_json_data = NULL;
-// static size_t json_data_len = 0;
-// static size_t json_data_pos = 0;
 
 static const char *TAG = "firebase_api";
 
@@ -129,179 +135,6 @@ esp_err_t firebase_init(void) {
 }
 
 
-// Send pre-formatted Firestore data (without formatting, since data is already in Firestore format)
-// esp_err_t firebase_send_firestore_data(const char *collection, const char *document_id, const char *firestore_data) {
-//     // Check parameters
-//     if (!collection || !firestore_data) {
-//         return ESP_ERR_INVALID_ARG;
-//     }
-
-//     // Log input data size
-//     ESP_LOGI(TAG, "Input Firestore data size: %zu bytes", strlen(firestore_data));
-//     ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", (uint32_t)esp_get_free_heap_size());
-    
-//     // Check and refresh token if needed
-//     if (!is_token_valid()) {
-//         ESP_LOGI(TAG, "Token expired or about to expire, generating new token");
-//         if (create_jwt_token() != ESP_OK) {
-//             ESP_LOGE(TAG, "Failed to create new JWT token");
-//             return ESP_FAIL;
-//         }
-//     }
-
-//     // Format URL
-//     char url[256];
-//     if (document_id != NULL && strlen(document_id) > 0) {
-//         // For first request no need for updateMask - send full document
-//         // Parameter currentDocument.exists=false guarantees that document will be created if it doesn't exist
-//         snprintf(url, sizeof(url), "%s/%s/%s?currentDocument.exists=false", 
-//                 FIREBASE_URL, collection, document_id);
-//     } else {
-//         // Create document with auto-generated ID
-//         snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
-//     }
-    
-//     ESP_LOGI(TAG, "Sending Firestore data to URL: %s", url);
-
-//     // Select HTTP method depending on presence of document_id
-//     esp_http_client_method_t http_method;
-//     if (document_id != NULL && strlen(document_id) > 0) {
-//         // For document with specified ID use PATCH (creates or updates)
-//         http_method = HTTP_METHOD_PATCH;
-//         ESP_LOGI(TAG, "Using HTTP PATCH for document with specified ID");
-//     } else {
-//         // For auto-generated ID use POST
-//         http_method = HTTP_METHOD_POST;
-//         ESP_LOGI(TAG, "Using HTTP POST for auto-generated document ID");
-//     }
-
-//     // Configure HTTP client with increased buffer sizes
-//     esp_http_client_config_t config = {
-//         .url = url,
-//         .event_handler = firebase_http_event_handler,
-//         .method = http_method,  
-//         .transport_type = HTTP_TRANSPORT_OVER_SSL,
-//         .cert_pem = firebase_root_cert,
-//         .buffer_size = HTTP_RX_BUFFER_SIZE,     
-//         .buffer_size_tx = HTTP_TX_BUFFER_SIZE,  
-//         .timeout_ms = 30000,                    
-//         .keep_alive_enable = true,              
-//         .skip_cert_common_name_check = true,    
-//         .port = 443,
-//         .use_global_ca_store = false,           
-//         .crt_bundle_attach = esp_crt_bundle_attach
-//     };
-
-//     ESP_LOGI(TAG, "HTTP client config - RX buffer: %d, TX buffer: %d", 
-//              HTTP_RX_BUFFER_SIZE, HTTP_TX_BUFFER_SIZE);
-//     ESP_LOGI(TAG, "Memory before HTTP client init: free heap: %" PRIu32 ", largest block: %" PRIu32,
-//              (uint32_t)esp_get_free_heap_size(), 
-//              (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-
-//     esp_http_client_handle_t client = esp_http_client_init(&config);
-//     if (client == NULL) {
-//         ESP_LOGE(TAG, "Failed to initialize HTTP client");
-//         return ESP_FAIL;
-//     }
-
-//     // Set headers
-//     size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
-//     char *auth_header = malloc(auth_header_size);
-//     if (auth_header == NULL) {
-//         ESP_LOGE(TAG, "Failed to allocate memory for auth header");
-//         esp_http_client_cleanup(client);
-//         return ESP_ERR_NO_MEM;
-//     }
-    
-//     snprintf(auth_header, auth_header_size, "Bearer %s", jwt_token);
-//     esp_http_client_set_header(client, "Authorization", auth_header);
-//     esp_http_client_set_header(client, "Content-Type", "application/json");
-
-//     // Set request body - since firestore_data is constant, we shouldn't free it
-//     esp_http_client_set_post_field(client, firestore_data, strlen(firestore_data));
-
-//     // Perform HTTP request with retry mechanism
-//     esp_err_t err = ESP_FAIL;
-//     for (int retry = 0; retry < MAX_HTTP_RETRIES; retry++) {
-//         err = esp_http_client_perform(client);
-        
-//         if (err == ESP_OK) {
-//             break;
-//         }
-        
-//         ESP_LOGW(TAG, "HTTP request failed (attempt %d/%d): %s", 
-//                  retry + 1, MAX_HTTP_RETRIES, esp_err_to_name(err));
-        
-//         if (retry < MAX_HTTP_RETRIES - 1) {
-//             // Wait before next attempt (increasing waiting time)
-//             int delay_ms = (retry + 1) * 1000;
-//             ESP_LOGI(TAG, "Retrying in %d ms...", delay_ms);
-//             vTaskDelay(pdMS_TO_TICKS(delay_ms));
-//         }
-//     }
-    
-//     // Free memory auth_header
-//     free(auth_header);
-    
-//     if (err != ESP_OK) {
-//         ESP_LOGE(TAG, "HTTP POST request failed after %d attempts: %s", 
-//                 MAX_HTTP_RETRIES, esp_err_to_name(err));
-//         esp_http_client_cleanup(client);
-//         return err;
-//     }
-
-//     int status_code = esp_http_client_get_status_code(client);
-//     ESP_LOGI(TAG, "HTTP status code: %d", status_code);
-
-//     // For code 400, try to get response body with error
-//     if (status_code >= 400) {
-//         // Get response body
-//         int content_length = esp_http_client_get_content_length(client);
-//         ESP_LOGI(TAG, "Error response length: %d", content_length);
-        
-//         if (content_length > 0 && content_length < 2048) {
-//             char *response_buffer = malloc(content_length + 1);
-//             if (response_buffer) {
-//                 int read_len = esp_http_client_read_response(client, response_buffer, content_length);
-//                 if (read_len > 0) {
-//                     response_buffer[read_len] = 0; // Null-terminate
-//                     ESP_LOGE(TAG, "Error response: %s", response_buffer);
-//                 }
-//                 free(response_buffer);
-//             }
-//         }
-//     }
-
-//     // Check response
-//     if (status_code == 200 || status_code == 201) {
-//         ESP_LOGI(TAG, "Firebase data sent successfully");
-        
-//         // Get successful response body (for debugging)
-//         int content_length = esp_http_client_get_content_length(client);
-//         if (content_length > 0 && content_length < 2048) {
-//             char *response_buffer = malloc(content_length + 1);
-//             if (response_buffer) {
-//                 int read_len = esp_http_client_read_response(client, response_buffer, content_length);
-//                 if (read_len > 0) {
-//                     response_buffer[read_len] = 0; // Null-terminate
-//                     ESP_LOGI(TAG, "Success response (first 200 chars): %.200s%s", 
-//                             response_buffer, strlen(response_buffer) > 200 ? "..." : "");
-//                 }
-//                 free(response_buffer);
-//             }
-//         }
-//     } else {
-//         ESP_LOGE(TAG, "Failed to send data. Status code: %d", status_code);
-//         err = ESP_FAIL;
-//     }
-
-//     esp_http_client_cleanup(client);
-//     return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
-// }
-
-
-
-
 // Simplified version without data provider
 esp_err_t firebase_send_streamed_data(const char *collection, const char *document_id, const char *firestore_data) {
     // Check arguments
@@ -320,12 +153,17 @@ esp_err_t firebase_send_streamed_data(const char *collection, const char *docume
         }
     }
     
-    // Forming URL
-    char url[256];
+    // Forming URL - using heap
+    char *url = heap_caps_malloc(256, MALLOC_CAP_8BIT);
+    if (!url) {
+        ESP_LOGE(TAG, "Failed to allocate memory for URL");
+        return ESP_ERR_NO_MEM;
+    }
+    
     if (document_id && strlen(document_id) > 0) {
-        snprintf(url, sizeof(url), "%s/%s/%s", FIREBASE_URL, collection, document_id);
+        snprintf(url, 256, "%s/%s/%s", FIREBASE_URL, collection, document_id);
     } else {
-        snprintf(url, sizeof(url), "%s/%s", FIREBASE_URL, collection);
+        snprintf(url, 256, "%s/%s", FIREBASE_URL, collection);
     }
     
     // HTTP method
@@ -345,13 +183,17 @@ esp_err_t firebase_send_streamed_data(const char *collection, const char *docume
     };
     
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) return ESP_FAIL;
+    if (!client) {
+        free(url);
+        return ESP_FAIL;
+    }
     
     // Allocate memory for auth_header in heap
     size_t auth_header_size = strlen("Bearer ") + strlen(jwt_token) + 1;
-    char *auth_header = malloc(auth_header_size);
+    char *auth_header = heap_caps_malloc(auth_header_size, MALLOC_CAP_8BIT);
     if (!auth_header) {
         esp_http_client_cleanup(client);
+        free(url);
         return ESP_ERR_NO_MEM;
     }
     
@@ -371,7 +213,221 @@ esp_err_t firebase_send_streamed_data(const char *collection, const char *docume
     
     // Free memory
     free(auth_header);
+    free(url);
     esp_http_client_cleanup(client);
     
     return (status_code == 200 || status_code == 201) ? ESP_OK : ESP_FAIL;
+}
+
+// Reading the content of a file into a buffer that has already been allocated in memory
+static esp_err_t read_sensor_file_to_buffer(const char *file_path, char *buffer, size_t buffer_size) {
+    if (!file_path || !buffer || buffer_size == 0) {
+        ESP_LOGE(TAG, "Invalid arguments for reading file");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    FILE *f = fopen(file_path, "r");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open sensor file: %s", file_path);
+        return ESP_FAIL;
+    }
+    
+    // Getting file size
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    if (file_size <= 0) {
+        ESP_LOGE(TAG, "Invalid file size: %ld", file_size);
+        fclose(f);
+        return ESP_FAIL;
+    }
+    
+    if ((size_t)file_size >= buffer_size) {
+        ESP_LOGE(TAG, "File size (%ld) exceeds buffer size (%zu)", file_size, buffer_size);
+        fclose(f);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Reading file to buffer
+    size_t bytes_read = fread(buffer, 1, file_size, f);
+    fclose(f);
+    
+    if (bytes_read != (size_t)file_size) {
+        ESP_LOGE(TAG, "Failed to read complete file. Read %zu of %ld bytes", bytes_read, file_size);
+        return ESP_FAIL;
+    }
+    
+    // Adding terminating zero
+    buffer[bytes_read] = '\0';
+    
+    ESP_LOGI(TAG, "Retrieved Firestore data, size: %zu bytes", bytes_read);
+    ESP_LOGI(TAG, "Current heap: %" PRIu32 " bytes free", esp_get_free_heap_size());
+    
+    return ESP_OK;
+}
+
+// Processing and sending data from sensor
+static esp_err_t process_and_send_sensor_data(const char *json_data) {
+    if (!json_data) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Allocating memory on heap for MAC address
+    char *mac_address = heap_caps_malloc(18, MALLOC_CAP_8BIT);
+    if (!mac_address) {
+        ESP_LOGE(TAG, "Failed to allocate memory for MAC address");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Extracting MAC address from JSON using helper function
+    esp_err_t ret = json_helper_extract_mac_address(json_data, mac_address, 18);
+    if (ret != ESP_OK) {
+        free(mac_address);
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "Extracted MAC address: %s", mac_address);
+    
+    // Getting current date for creating document ID
+    time_t now;
+    time(&now);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+    
+    // Allocating memory on heap for time_str
+    char *time_str = heap_caps_malloc(20, MALLOC_CAP_8BIT);
+    if (!time_str) {
+        ESP_LOGE(TAG, "Failed to allocate memory for time string");
+        free(mac_address);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    strftime(time_str, 20, "%Y-%m-%d", &timeinfo);
+    
+    // Formatting MAC address (replacing colons with underscores)
+    char *formatted_mac = heap_caps_malloc(18, MALLOC_CAP_8BIT);
+    if (!formatted_mac) {
+        ESP_LOGE(TAG, "Failed to allocate memory for formatted MAC");
+        free(time_str);
+        free(mac_address);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    json_helper_format_mac_address(mac_address, formatted_mac, 18);
+    
+    // Generating document ID
+    char *document_id = heap_caps_malloc(64, MALLOC_CAP_8BIT);
+    if (!document_id) {
+        ESP_LOGE(TAG, "Failed to allocate memory for document ID");
+        free(formatted_mac);
+        free(time_str);
+        free(mac_address);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    json_helper_generate_document_id(time_str, formatted_mac, document_id, 64);
+    
+    ESP_LOGI(TAG, "Using custom document ID: %s", document_id);
+    
+    // Sending data to Firestore
+    ret = firebase_send_streamed_data("daily_measurements", document_id, json_data);
+    
+    // Freeing allocated memory
+    free(document_id);
+    free(formatted_mac);
+    free(time_str);
+    free(mac_address);
+    
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Measurements sent successfully");
+    } else {
+        ESP_LOGE(TAG, "Failed to send measurements");
+    }    
+    return ret;
+}
+
+esp_err_t send_all_sensor_measurements_to_firebase(void) {
+    static const char *TAG_FIREBASE = "FIREBASE_TASKS";
+    
+    // Getting list of files
+    char **file_list = NULL;
+    int file_count = 0;
+    esp_err_t ret = storage_get_sensor_files(&file_list, &file_count);
+    
+    if (ret != ESP_OK || file_count == 0 || file_list == NULL) {
+        ESP_LOGE(TAG_FIREBASE, "No sensor files found");
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    ESP_LOGI(TAG_FIREBASE, "Found %d sensor files to send", file_count);
+    
+    // Variables for tracking results
+    bool any_success = false;
+    bool any_failure = false;
+    int success_count = 0;
+    
+    // Processing each file separately with pauses between requests
+    for (int i = 0; i < file_count; i++) {
+        ESP_LOGI(TAG_FIREBASE, "Processing file %d/%d: %s", i+1, file_count, file_list[i]);
+        
+        // Allocating memory for file content
+        char *file_content = heap_caps_malloc(18 * 1024, MALLOC_CAP_8BIT);
+        if (!file_content) {
+            ESP_LOGE(TAG_FIREBASE, "Failed to allocate memory for file content");
+            any_failure = true;
+            // Continuing to process other files
+            continue;
+        }
+        
+        // Reading file to allocated memory
+        ret = read_sensor_file_to_buffer(file_list[i], file_content, 18 * 1024);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG_FIREBASE, "Failed to read file: %s", file_list[i]);
+            free(file_content);
+            any_failure = true;
+            continue;
+        }
+        
+        // Processing and sending data
+        ret = process_and_send_sensor_data(file_content);
+        
+        // Freeing file content memory immediately after use
+        free(file_content);
+        
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG_FIREBASE, "Successfully sent data from file %s", file_list[i]);
+            any_success = true;
+            success_count++;
+            
+            // Deleting file after successful sending
+            if (unlink(file_list[i]) != 0) {
+                ESP_LOGW(TAG_FIREBASE, "Failed to delete file after successful upload: %s", file_list[i]);
+            } else {
+                ESP_LOGI(TAG_FIREBASE, "Deleted file after successful upload: %s", file_list[i]);
+            }
+        } else {
+            ESP_LOGE(TAG_FIREBASE, "Failed to send data from file %s", file_list[i]);
+            any_failure = true;
+        }
+        
+        // Pause between sending gives time to release resources
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    
+    // Freeing list of files
+    storage_free_sensor_files(file_list, file_count);
+    
+    // Logging results
+    ESP_LOGI(TAG_FIREBASE, "Sensor data upload summary: %d/%d files successfully sent", 
+             success_count, file_count);
+    
+    // Defining return status
+    if (any_success && !any_failure) {
+        return ESP_OK;              // All successfully sent
+    } else if (any_success) {
+        return ESP_ERR_INVALID_STATE; // Some sent, some not
+    } else {
+        return ESP_FAIL;            // None sent
+    }
 }

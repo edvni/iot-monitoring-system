@@ -1,10 +1,15 @@
 #include "reporter.h"
+#include "system_states.h"
 #include "esp_log.h"
 #include "battery_monitor.h"
 #include <time.h>
 #include <string.h>
+#include "storage.h"
+#include "discord_api.h"
 
 static const char *TAG = "reporter";
+// Safe message initialization
+char message[128];
 
 esp_err_t reporter_format_initial_message(char *message, size_t message_size) {
     if (message == NULL || message_size == 0) {
@@ -44,3 +49,28 @@ esp_err_t reporter_format_initial_message(char *message, size_t message_size) {
     ESP_LOGI(TAG, "Formatted initial message: %s", message);
     return ESP_OK;
 } 
+
+esp_err_t sending_report_to_discord() {
+
+    esp_err_t ret;
+
+    ret = discord_init();
+    if (ret != ESP_OK) {
+        storage_append_log("Discord init failed in first boot");
+        unsuccessful_init(TAG);
+    }
+    
+    // Format initial message with battery information
+    ret = reporter_format_initial_message(message, sizeof(message));
+    if (ret != ESP_OK) {
+        storage_append_log("Failed to format initial message");
+    }
+    
+    // Sending the first message using task
+    ret = discord_send_message_safe(message);
+    if (ret != ESP_OK) {
+        storage_append_log("Failed to send first boot message");
+    }
+    
+    return ESP_OK;
+}

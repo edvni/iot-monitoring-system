@@ -12,4 +12,5 @@ idf_component_register(
     battery_monitor
     reporter
     firebase_api
+    system_states
 )

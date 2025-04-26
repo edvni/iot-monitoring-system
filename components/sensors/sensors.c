@@ -8,13 +8,41 @@
 #include "host/util/util.h"
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
+#include "storage.h"
 
 static const char *TAG = "SENSORS";
+
+/**
+ * @brief Array of MAC addresses of allowed sensors
+ * 
+ * To add a new sensor:
+ * 1. Add the MAC address to this array
+ * 2. The system will automatically:
+ *    - Track data only from these sensors
+ *    - Save data in separate files for each sensor
+ *    - Send all data to Firebase with unique document_id
+ * 
+ * Example format of MAC addresses: "XX:XX:XX:XX:XX:XX" (all uppercase letters)
+ */
 static const char *TARGET_MACS[] = {
-    "DB:C3:58:D9:03:70", // Vladimir RuuviTag
-    "C4:D9:12:ED:63:C6", // Edvard RuuviTag
-    "C5:71:D4:30:42:34" // Johannes RuuviTag
+    "DB:C3:58:D9:03:70" // Vladimir RuuviTag
+    //"EE:C4:12:FD:CA:DF" // Vladimir RuuviTag
+    //"C4:D9:12:ED:63:C6", // Edvard RuuviTag
+    //"C5:71:D4:30:42:34" // Johannes RuuviTag
 };
+#define MAX_SENSORS (sizeof(TARGET_MACS) / sizeof(TARGET_MACS[0]))
+
+// Structure for tracking sensor status
+typedef struct {
+    char mac_address[18];     // MAC address of the sensor
+    bool data_received;       // Flag for data received
+    uint64_t last_timestamp;  // Timestamp of the last data received
+} sensor_status_t;
+
+static sensor_status_t sensor_status[MAX_SENSORS];
+static int sensors_received_count = 0;
+static bool any_data_received = false;
+static volatile bool s_data_received = false; // Флаг получения данных
 static ruuvi_callback_t measurement_callback = NULL;
 
 // Ruuvi manufacturer specific data
@@ -23,17 +51,86 @@ static const uint8_t RUUVI_RAW_V2 = 0x05;
 
 // NimBLE scan parameters
 static struct ble_gap_disc_params scan_params = {
-    .itvl = BLE_GAP_SCAN_ITVL_MS(1000),      // 1000ms scan interval
-    .window = BLE_GAP_SCAN_WIN_MS(500),       // 5000ms scan window
-    .filter_policy = 0,                      // No filter policy
-    .limited = 0,                            // Not limited discovery
-    .passive = 1,                            // Passive scanning
-    .filter_duplicates = 0                   // Don't filter duplicates
+    .itvl = BLE_GAP_SCAN_ITVL_MS(100),      // 100ms scan interval
+    .window = BLE_GAP_SCAN_WIN_MS(75),      // 75ms scan window 
+    .filter_policy = 0,                     // No filter policy
+    .limited = 0,                           // Not limited discovery
+    .passive = 0,                           // Active scanning for better detection
+    .filter_duplicates = 0                  // Do not filter duplicates
 };
 
 // BLE scan parameters
 static void ble_app_on_sync(void);
 static void ble_host_task(void *param);
+
+// Initialize sensor status
+static void init_sensor_status(void) {
+    for (int i = 0; i < MAX_SENSORS; i++) {
+        strncpy(sensor_status[i].mac_address, TARGET_MACS[i], sizeof(sensor_status[i].mac_address));
+        sensor_status[i].data_received = false;
+        sensor_status[i].last_timestamp = 0;
+    }
+    sensors_received_count = 0;
+    any_data_received = false;
+}
+
+// Reset all sensors status
+esp_err_t sensors_reset_status(void) {
+    ESP_LOGI(TAG, "Resetting sensor status data");
+    
+    // Reset all sensors status
+    for (int i = 0; i < MAX_SENSORS; i++) {
+        sensor_status[i].data_received = false;
+        sensor_status[i].last_timestamp = 0;
+    }
+    
+    sensors_received_count = 0;
+    any_data_received = false;
+    
+    return ESP_OK;
+}
+
+// Check if data is received from a specific sensor
+static bool is_data_received_from_sensor(const char* mac_address) {
+    for (int i = 0; i < MAX_SENSORS; i++) {
+        if (strcmp(sensor_status[i].mac_address, mac_address) == 0) {
+            return sensor_status[i].data_received;
+        }
+    }
+    return false;
+}
+
+// Update sensor status when data is received
+static void update_sensor_received(const char* mac_address, uint64_t timestamp) {
+    for (int i = 0; i < MAX_SENSORS; i++) {
+        if (strcmp(sensor_status[i].mac_address, mac_address) == 0) {
+            if (!sensor_status[i].data_received) {
+                sensor_status[i].data_received = true;
+                sensor_status[i].last_timestamp = timestamp;
+                sensors_received_count++;
+                any_data_received = true;
+                ESP_LOGI(TAG, "Received data from sensor %d (%s), total sensors received: %d/%d", 
+                         i, mac_address, sensors_received_count, (int)MAX_SENSORS);
+            }
+            return;
+        }
+    }
+}
+
+// Get the number of sensors from which data has been received
+int sensors_get_received_count(void) {
+    return sensors_received_count;
+}
+
+// Check if data has been received from at least one sensor
+bool sensors_any_data_received(void) {
+    return any_data_received;
+}
+
+// Get the total number of configured sensors
+int sensors_get_total_count(void) {
+    return MAX_SENSORS;
+}
 
 static void parse_ruuvi_data(const uint8_t *data, uint8_t len, ruuvi_measurement_t *measurement) {
     if (len < 14 || data[0] != RUUVI_RAW_V2) {
@@ -70,7 +167,7 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
                         
                         // Check if this is one of our target RuuviTags
                         bool is_target = false;
-                        for (int i = 0; i < sizeof(TARGET_MACS) / sizeof(TARGET_MACS[0]); i++) {
+                        for (int i = 0; i < MAX_SENSORS; i++) {
                             if (strcmp(measurement.mac_address, TARGET_MACS[i]) == 0) {
                                 is_target = true;
                                 break;
@@ -78,11 +175,20 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
                         }
                         
                         if (is_target) {
+                            // Check if data has already been received from this sensor
+                            if (is_data_received_from_sensor(measurement.mac_address)) {
+                                ESP_LOGD(TAG, "Already received data from %s in this cycle", measurement.mac_address);
+                                return 0;
+                            }
+
                             // Parse measurement data
                             parse_ruuvi_data(fields.mfg_data + 2, fields.mfg_data_len - 2, &measurement);
                             
                             // Set timestamp
                             measurement.timestamp = esp_timer_get_time() / 1000000;
+                            
+                            // Update sensor status
+                            update_sensor_received(measurement.mac_address, measurement.timestamp);
                             
                             // Call user callback
                             measurement_callback(&measurement);
@@ -98,15 +204,39 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
     return 0;
 }
 
-esp_err_t sensors_init(ruuvi_callback_t callback) {
+// Внутренний коллбэк для обработки данных от RuuviTag
+static void internal_ruuvi_data_callback(ruuvi_measurement_t *measurement) {
+    esp_err_t ret = storage_save_measurement(measurement);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save measurement from %s", measurement->mac_address);
+    } else {
+        ESP_LOGI(TAG, "Successfully saved data from %s", measurement->mac_address);
+        s_data_received = true; // Устанавливаем внутренний флаг
+    }
+}
+
+// Новые функции для управления флагом получения данных
+void sensors_reset_data_received_flag(void) {
+    s_data_received = false;
+}
+
+bool sensors_is_data_received(void) {
+    return s_data_received;
+}
+
+void sensors_set_data_received(void) {
+    s_data_received = true;
+}
+
+// Изменённая функция инициализации
+esp_err_t sensors_init(void) {
     int rc;
 
-    if (callback == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Store callback
-    measurement_callback = callback;
+    // Используем внутренний коллбэк
+    measurement_callback = internal_ruuvi_data_callback;
+    
+    // Initialize sensor status
+    init_sensor_status();
 
     // Initialize NimBLE host stack
     ESP_LOGI(TAG, "Initializing NimBLE host stack");
@@ -124,6 +254,11 @@ esp_err_t sensors_init(ruuvi_callback_t callback) {
     
     // Initialize the NimBLE host task
     nimble_port_freertos_init(ble_host_task);
+    
+    ESP_LOGI(TAG, "Scanning for %d configured sensors", (int)MAX_SENSORS);
+    for (int i = 0; i < MAX_SENSORS; i++) {
+        ESP_LOGI(TAG, "Sensor %d MAC: %s", i, TARGET_MACS[i]);
+    }
     
     return ESP_OK;
 }

@@ -38,6 +38,12 @@ esp_err_t discord_send_message(const char *message);
  */
 esp_err_t discord_send_message_safe(const char *message);
 
+/**
+ * @brief Send initial message with system information to Discord
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t send_initial_discord_message(void);
 
 /**
  * @brief Send measurements to Discord channel using a separate task with larger stack
