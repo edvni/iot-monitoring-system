@@ -4,6 +4,7 @@
 #include "jwt_util.h"
 #include "firebase_cert.h"
 #include "time_manager.h"
+#include "json_helper.h"
 
 /**
  * @file firebase_api.c
@@ -272,53 +273,19 @@ static esp_err_t process_and_send_sensor_data(const char *json_data) {
         return ESP_ERR_INVALID_ARG;
     }
     
-    // Parsing JSON to extract MAC address
-    cJSON *root = cJSON_Parse(json_data);
-    if (!root) {
-        ESP_LOGE(TAG, "Failed to parse JSON data");
-        return ESP_FAIL;
-    }
-    
-    // Extracting MAC address from JSON document
-    cJSON *fields = cJSON_GetObjectItem(root, "fields");
-    if (!fields) {
-        ESP_LOGE(TAG, "No 'fields' object in JSON");
-        cJSON_Delete(root);
-        return ESP_FAIL;
-    }
-    
-    // Trying to get MAC address first from "macAddress" field, then from "tag_id"
-    cJSON *mac_obj = cJSON_GetObjectItem(fields, "macAddress");
-    if (!mac_obj) {
-        // If there is no "macAddress" field, try to find "tag_id"
-        mac_obj = cJSON_GetObjectItem(fields, "tag_id");
-        if (!mac_obj) {
-            ESP_LOGE(TAG, "Neither 'macAddress' nor 'tag_id' field found in JSON");
-            cJSON_Delete(root);
-            return ESP_FAIL;
-        }
-        ESP_LOGI(TAG, "Using 'tag_id' field for MAC address");
-    } else {
-        ESP_LOGI(TAG, "Using 'macAddress' field for MAC address");
-    }
-    
-    cJSON *string_value = cJSON_GetObjectItem(mac_obj, "stringValue");
-    if (!string_value || !cJSON_IsString(string_value)) {
-        ESP_LOGE(TAG, "Invalid MAC address format in JSON");
-        cJSON_Delete(root);
-        return ESP_FAIL;
-    }
-    
-    // Allocating memory on heap 
+    // Allocating memory on heap for MAC address
     char *mac_address = heap_caps_malloc(18, MALLOC_CAP_8BIT);
     if (!mac_address) {
         ESP_LOGE(TAG, "Failed to allocate memory for MAC address");
-        cJSON_Delete(root);
         return ESP_ERR_NO_MEM;
     }
     
-    strncpy(mac_address, string_value->valuestring, 17);
-    mac_address[17] = '\0';
+    // Extracting MAC address from JSON using helper function
+    esp_err_t ret = json_helper_extract_mac_address(json_data, mac_address, 18);
+    if (ret != ESP_OK) {
+        free(mac_address);
+        return ret;
+    }
     
     ESP_LOGI(TAG, "Extracted MAC address: %s", mac_address);
     
@@ -333,51 +300,38 @@ static esp_err_t process_and_send_sensor_data(const char *json_data) {
     if (!time_str) {
         ESP_LOGE(TAG, "Failed to allocate memory for time string");
         free(mac_address);
-        cJSON_Delete(root);
         return ESP_ERR_NO_MEM;
     }
     
     strftime(time_str, 20, "%Y-%m-%d", &timeinfo);
     
-    // Replacing colons in MAC address with underscores for document name
+    // Formatting MAC address (replacing colons with underscores)
     char *formatted_mac = heap_caps_malloc(18, MALLOC_CAP_8BIT);
     if (!formatted_mac) {
         ESP_LOGE(TAG, "Failed to allocate memory for formatted MAC");
         free(time_str);
         free(mac_address);
-        cJSON_Delete(root);
         return ESP_ERR_NO_MEM;
     }
     
-    strncpy(formatted_mac, mac_address, 17);
-    formatted_mac[17] = '\0';
+    json_helper_format_mac_address(mac_address, formatted_mac, 18);
     
-    for (int i = 0; i < strlen(formatted_mac); i++) {
-        if (formatted_mac[i] == ':') {
-            formatted_mac[i] = '_';
-        }
-    }
-    
-    // Allocating memory on heap for document_id
+    // Generating document ID
     char *document_id = heap_caps_malloc(64, MALLOC_CAP_8BIT);
     if (!document_id) {
         ESP_LOGE(TAG, "Failed to allocate memory for document ID");
         free(formatted_mac);
         free(time_str);
         free(mac_address);
-        cJSON_Delete(root);
         return ESP_ERR_NO_MEM;
     }
     
-    snprintf(document_id, 64, "%s_%s", time_str, formatted_mac);
+    json_helper_generate_document_id(time_str, formatted_mac, document_id, 64);
     
     ESP_LOGI(TAG, "Using custom document ID: %s", document_id);
     
-    // Freeing JSON object, as it is no longer needed
-    cJSON_Delete(root);
-    
     // Sending data to Firestore
-    esp_err_t ret = firebase_send_streamed_data("daily_measurements", document_id, json_data);
+    ret = firebase_send_streamed_data("daily_measurements", document_id, json_data);
     
     // Freeing allocated memory
     free(document_id);
