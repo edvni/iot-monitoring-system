@@ -17,17 +17,6 @@
  */
 esp_err_t firebase_init(void);
 
-// /**
-//  * @brief Send final measurements to Firebase
-//  * 
-//  * Uses the same logic as process_and_send_sensor_data,
-//  * but takes data directly instead of reading from a file.
-//  * 
-//  * @param measurements String JSON with measurement data
-//  * @return esp_err_t ESP_OK on success
-//  */
-// esp_err_t send_final_measurements_to_firebase(const char *measurements);
-
 /**
  * @brief Send all sensor data from storage to Firebase
  * 

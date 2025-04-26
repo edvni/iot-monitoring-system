@@ -18,7 +18,7 @@
 #include "cJSON.h"
 
 #include "power_management.h"
-#include "system_state.h"
+#include "state.h"
 #include "sensors.h"
 #include "storage.h"
 #include "gsm_modem.h"
@@ -38,8 +38,6 @@ static const char *TAG = "main";
 #define TRIGGER_INTERVAL    (3 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
 
 static volatile bool data_received = false;  // Flag for data received
-// Safe message initialization
-char message[128];
 
 // RuuviTag data callback
 static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
@@ -50,42 +48,6 @@ static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
         ESP_LOGI(TAG, "Successfully saved data from %s", measurement->mac_address);
         data_received = true;  // Set the flag for the main cycle
     }
-}
-
-// Unsuccessful initialization
-static void unsuccessful_init() {
-    //ESP_LOGE(TAG, "Failed to initialize GSM or Discord API");
-    storage_append_log("Unsuccessful initialization detected");
-    ESP_LOGE(TAG, "Restarting modem in 10 seconds");
-    storage_set_error_flag();
-    modem_power_off();
-    vTaskDelay(pdMS_TO_TICKS(10000)); // Restart in 10 seconds
-    esp_restart();
-}
-
-static esp_err_t sending_message_to_discord() {
-
-    esp_err_t ret;
-
-    ret = discord_init();
-    if (ret != ESP_OK) {
-        storage_append_log("Discord init failed in first boot");
-        unsuccessful_init();
-    }
-    
-    // Format initial message with battery information
-    ret = reporter_format_initial_message(message, sizeof(message));
-    if (ret != ESP_OK) {
-        storage_append_log("Failed to format initial message");
-    }
-    
-    // Sending the first message using task
-    ret = discord_send_message_safe(message);
-    if (ret != ESP_OK) {
-        storage_append_log("Failed to send first boot message");
-    }
-    
-    return ESP_OK;
 }
 
 
@@ -171,7 +133,7 @@ first_block_init:
         ret = gsm_modem_init();
         if (ret != ESP_OK) {
             storage_append_log("GSM modem init failed in first boot");
-            unsuccessful_init();
+            unsuccessful_init(TAG);
         } else {
             network_initialized = true;
 
@@ -189,7 +151,7 @@ first_block_init:
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Discord API initialization for the first message
-        ret = sending_message_to_discord();
+        ret = sending_report_to_discord();
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
         }
@@ -306,7 +268,7 @@ second_block_init:
         ret = gsm_modem_init();
         if (ret != ESP_OK) {
             storage_append_log("GSM modem init failed for data sending");
-            unsuccessful_init();
+            unsuccessful_init(TAG);
         } else {
             network_initialized = true;
         }
@@ -327,7 +289,7 @@ second_block_init:
         ret = firebase_init();
         if (ret != ESP_OK) {
             storage_append_log("Firebase init failed for data sending");
-            unsuccessful_init();
+            unsuccessful_init(TAG);
         }
     
         // Getting measurements from storage and sending them
@@ -354,7 +316,7 @@ second_block_init:
         }
 
         // Discord message about battery status
-        ret = sending_message_to_discord();
+        ret = sending_report_to_discord();
         if (ret != ESP_OK) {
             storage_append_log("Failed to send message about battery status");
         }
