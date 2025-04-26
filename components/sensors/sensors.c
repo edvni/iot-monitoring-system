@@ -8,6 +8,7 @@
 #include "host/util/util.h"
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
+#include "storage.h"
 
 static const char *TAG = "SENSORS";
 
@@ -41,6 +42,7 @@ typedef struct {
 static sensor_status_t sensor_status[MAX_SENSORS];
 static int sensors_received_count = 0;
 static bool any_data_received = false;
+static volatile bool s_data_received = false; // Флаг получения данных
 static ruuvi_callback_t measurement_callback = NULL;
 
 // Ruuvi manufacturer specific data
@@ -202,15 +204,36 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
     return 0;
 }
 
-esp_err_t sensors_init(ruuvi_callback_t callback) {
+// Внутренний коллбэк для обработки данных от RuuviTag
+static void internal_ruuvi_data_callback(ruuvi_measurement_t *measurement) {
+    esp_err_t ret = storage_save_measurement(measurement);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save measurement from %s", measurement->mac_address);
+    } else {
+        ESP_LOGI(TAG, "Successfully saved data from %s", measurement->mac_address);
+        s_data_received = true; // Устанавливаем внутренний флаг
+    }
+}
+
+// Новые функции для управления флагом получения данных
+void sensors_reset_data_received_flag(void) {
+    s_data_received = false;
+}
+
+bool sensors_is_data_received(void) {
+    return s_data_received;
+}
+
+void sensors_set_data_received(void) {
+    s_data_received = true;
+}
+
+// Изменённая функция инициализации
+esp_err_t sensors_init(void) {
     int rc;
 
-    if (callback == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Store callback
-    measurement_callback = callback;
+    // Используем внутренний коллбэк
+    measurement_callback = internal_ruuvi_data_callback;
     
     // Initialize sensor status
     init_sensor_status();

@@ -2,7 +2,7 @@
 //#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #include "storage.h"
 #include "sensors.h"
-#include "system_state.h"
+#include "system_states.h"
 #include "time_manager.h"
 #include "json_helper.h"
 #include "nvs_flash.h"
@@ -18,8 +18,6 @@
 #include <math.h>
 #include <dirent.h> 
 
-#define MEASUREMENTS_FILE   "/spiffs/measurements.json"
-#define FIRESTORE_MEASUREMENTS_FILE "/spiffs/firestore_measurements.json"
 #define FIRST_BOOT_KEY "first_boot"
 
 static const char *TAG = "STORAGE";
@@ -62,32 +60,6 @@ esp_err_t storage_init(void) {
    }
 
    return ESP_OK;
-}
-
-// -------------------- NVS operations for boot count -------------------- //
-
-// Get the boot count from NVS
-uint32_t storage_get_boot_count(void) {
-   uint32_t boot_count = 0;
-   if (nvs_get_u32(my_nvs_handle, "boot_count", &boot_count) == ESP_ERR_NVS_NOT_FOUND) {
-       ESP_LOGI(TAG, "Boot count not found, starting from 0");
-   }
-   return boot_count;
-}
-
-// Increment the boot count and save it to NVS
-esp_err_t storage_increment_boot_count(void) {
-   uint32_t boot_count = storage_get_boot_count() + 1;
-   esp_err_t ret = nvs_set_u32(my_nvs_handle, "boot_count", boot_count);
-   return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
-}
-
-// Reset the boot count to 0
-esp_err_t storage_reset_counter(void) {
-   
-    esp_err_t ret = nvs_set_u32(my_nvs_handle, "boot_count", 0);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
-
 }
 
 // -------------------- SPIFFS operations for measurements -------------------- //
@@ -227,7 +199,7 @@ esp_err_t storage_append_log(const char* log_message) {
     }
     
     // Adding a timestamp and a message
-    uint32_t boot_count = storage_get_boot_count();
+    uint32_t boot_count = get_boot_count();
     fprintf(f, "[Boot:%lu][%lld] %s\n", boot_count, (long long)(esp_timer_get_time() / 1000000), log_message);
     fclose(f);
     #endif
@@ -327,47 +299,6 @@ char* storage_get_logs(void) {
     #else
     return NULL;
     #endif
-}
-
-
-// -------------------- Error flag operations -------------------- //
-
-// Setting the error flag
-esp_err_t storage_set_error_flag(void) {
-    esp_err_t ret = nvs_set_u8(my_nvs_handle, "error_flag", 1);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
-}
-
-// Getting the error flag
-bool storage_get_error_flag(void) {
-    uint8_t flag = 0;
-    esp_err_t ret = nvs_get_u8(my_nvs_handle, "error_flag", &flag);
-    return (ret == ESP_OK && flag == 1);
-}
-// -------------------- System state operations -------------------- //
-
-
-esp_err_t storage_set_system_state(system_state_t state) {
-    esp_err_t ret = nvs_set_u8(my_nvs_handle, "system_state", (uint8_t)state);
-    if (ret != ESP_OK) return ret;
-    return nvs_commit(my_nvs_handle);
-}
-
-system_state_t storage_get_system_state(void) {
-    uint8_t state = STATE_NORMAL;
-    esp_err_t ret = nvs_get_u8(my_nvs_handle, "system_state", &state);
-    return (ret == ESP_OK) ? (system_state_t)state : STATE_NORMAL;
-}
-
-bool storage_is_first_boot(void) {
-    uint8_t first_boot = 0;
-    esp_err_t ret = nvs_get_u8(my_nvs_handle, FIRST_BOOT_KEY, &first_boot);
-    return (ret == ESP_ERR_NVS_NOT_FOUND || first_boot == 0);
-}
-
-esp_err_t storage_mark_first_boot_completed(void) {
-    esp_err_t ret = nvs_set_u8(my_nvs_handle, FIRST_BOOT_KEY, 1);
-    return (ret != ESP_OK) ? ret : nvs_commit(my_nvs_handle);
 }
 
 // Function for getting a list of sensor files

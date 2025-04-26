@@ -1,11 +1,11 @@
 #include "reporter.h"
+#include "system_states.h"
 #include "esp_log.h"
 #include "battery_monitor.h"
 #include <time.h>
 #include <string.h>
 #include "storage.h"
 #include "discord_api.h"
-#include "state.h"
 
 static const char *TAG = "reporter";
 // Safe message initialization

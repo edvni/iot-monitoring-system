@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_pm.h" 
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -18,7 +19,8 @@
 #include "cJSON.h"
 
 #include "power_management.h"
-#include "state.h"
+#include "reporter.h"
+#include "system_states.h"
 #include "sensors.h"
 #include "storage.h"
 #include "gsm_modem.h"
@@ -27,7 +29,6 @@
 #include "esp_timer.h"
 #include "time_manager.h"
 #include "battery_monitor.h"
-#include "reporter.h"
 #include "firebase_api.h"
 
 
@@ -36,19 +37,6 @@ static const char *TAG = "main";
 #define SECONDS_IN_MICROS 1000000ULL
 #define SEND_DATA_CYCLE 144  // For testing 3
 #define TRIGGER_INTERVAL    (3 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
-
-static volatile bool data_received = false;  // Flag for data received
-
-// RuuviTag data callback
-static void ruuvi_data_callback(ruuvi_measurement_t *measurement) {
-    esp_err_t ret = storage_save_measurement(measurement);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to save measurement from %s", measurement->mac_address);
-    } else {
-        ESP_LOGI(TAG, "Successfully saved data from %s", measurement->mac_address);
-        data_received = true;  // Set the flag for the main cycle
-    }
-}
 
 
 // Main function
@@ -83,16 +71,17 @@ void app_main(void)
     
     // Storage initialization
     ESP_ERROR_CHECK(storage_init());
+    ESP_ERROR_CHECK(system_state_init());
 
     // Get the current system state
-    system_state_t current_state = storage_get_system_state();
+    system_state_t current_state = get_system_state();
     
     // For debugging, add a log about the current state
     snprintf(log_buf, sizeof(log_buf), "Current system state: %d", current_state);
     storage_append_log(log_buf);
 
     // Counter checking
-    uint32_t boot_count = storage_get_boot_count();
+    uint32_t boot_count = get_boot_count();
     sniprintf(log_buf, sizeof(log_buf), "Boot count before work cycle: %lu", boot_count);
     storage_append_log(log_buf);
     
@@ -119,13 +108,13 @@ void app_main(void)
     }
 
     // --- BLOCK 1: Special operations for the first boot ---
-    if (storage_is_first_boot()) {
+    if (is_first_boot()) {
         first_boot = true; 
 
         storage_append_log("First boot operations");
         
         // Setting the state for the first block
-        storage_set_system_state(STATE_FIRST_BLOCK_RECOVERY);
+        set_system_state(STATE_FIRST_BLOCK_RECOVERY);
         vTaskDelay(pdMS_TO_TICKS(500));
 
 first_block_init:
@@ -147,7 +136,7 @@ first_block_init:
         }
 
         // Setting the normal state
-        storage_set_system_state(STATE_NORMAL);
+        set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Discord API initialization for the first message
@@ -157,14 +146,14 @@ first_block_init:
         }
         
         // Mark first boot as completed
-        storage_mark_first_boot_completed();
+        mark_first_boot_completed();
         storage_append_log("First boot completed");
     }
     
 // --- BLOCK 2: Data collection (for all cycles) ---
 // data_collection:
     // Mark that there was an error in the previous cycle
-    bool error_in_prev_cycle = storage_get_error_flag();    
+    bool error_in_prev_cycle = get_error_flag();    
     if(!error_in_prev_cycle) {
         storage_append_log("Starting data collection");
         
@@ -185,12 +174,14 @@ first_block_init:
                 
                 // Reset the sensor status
                 sensors_reset_status();
+                // Сброс флага получения данных 
+                sensors_reset_data_received_flag();
                 
                 vTaskDelay(pdMS_TO_TICKS(500)); // Small pause between attempts
             }
             
-            // Sensors initialization
-            ESP_ERROR_CHECK(sensors_init(ruuvi_data_callback));
+            // Sensors initialization - больше не требует передачи коллбэка
+            ESP_ERROR_CHECK(sensors_init());
             
             // Waiting for data
             const int MAX_WAIT_TIME_MS = 10000;
@@ -240,11 +231,14 @@ first_block_init:
                          sensors_get_received_count(), TOTAL_SENSORS);
             }
             
-            data_received = true;
+            // Проверка получения данных через функцию из sensors
+            if (!sensors_is_data_received()) {
+                sensors_set_data_received();
+            }
         }
 
         // Increment the counter 
-        ESP_ERROR_CHECK(storage_increment_boot_count());
+        ESP_ERROR_CHECK(increment_boot_count());
           
         storage_append_log("Done");
 
@@ -253,14 +247,14 @@ first_block_init:
         storage_append_log("Error in previous cycle was detected, skipping data collection");
     }
 
-    boot_count = storage_get_boot_count();
+    boot_count = get_boot_count();
 
 // --- BLOCK 3: Send accumulated data if target value is reached ---
     if (boot_count >= SEND_DATA_CYCLE) {
         storage_append_log("Sending accumulated data");
 
         // Setting the state for the second block
-        storage_set_system_state(STATE_SECOND_BLOCK_RECOVERY);
+        set_system_state(STATE_SECOND_BLOCK_RECOVERY);
         vTaskDelay(pdMS_TO_TICKS(500));
 
 second_block_init:
@@ -282,7 +276,7 @@ second_block_init:
         }
 
         // Setting the normal state
-        storage_set_system_state(STATE_NORMAL);
+        set_system_state(STATE_NORMAL);
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Firebase API initialization 
@@ -300,7 +294,7 @@ second_block_init:
             if (ret == ESP_OK) {
                 // All files sent successfully
                 storage_append_log("All sensor files sent successfully");
-                ESP_ERROR_CHECK(storage_reset_counter());
+                ESP_ERROR_CHECK(reset_boot_counter());
                 data_from_storage_sent = true;
             } else if (ret == ESP_ERR_INVALID_STATE) {
                 // Some files were sent
@@ -331,7 +325,7 @@ second_block_init:
     sensors_deinit();
 
     // Safe string formatting with boot count
-    int written = snprintf(log_buf, sizeof(log_buf), "Final boot count: %lu", storage_get_boot_count());
+    int written = snprintf(log_buf, sizeof(log_buf), "Final boot count: %" PRIu32, get_boot_count());
     if (written < 0 || written >= (int)sizeof(log_buf)) {
         ESP_LOGE(TAG, "Error formatting boot count log");
         storage_append_log("Error logging final boot count");
@@ -346,7 +340,7 @@ second_block_init:
             storage_append_log("Sending logs");
 
             // Setting the state for the third block
-            storage_set_system_state(STATE_THIRD_BLOCK_RECOVERY);
+            set_system_state(STATE_THIRD_BLOCK_RECOVERY);
             vTaskDelay(pdMS_TO_TICKS(500));
 
     third_block_init:
@@ -369,7 +363,7 @@ second_block_init:
             }
 
             // Setting the normal state
-            storage_set_system_state(STATE_NORMAL);
+            set_system_state(STATE_NORMAL);
             vTaskDelay(pdMS_TO_TICKS(500));
             
             // Discord API initialization for logs sending
@@ -390,7 +384,7 @@ second_block_init:
         gsm_modem_deinit();
     }
     
-    storage_set_system_state(STATE_NORMAL);
+    set_system_state(STATE_NORMAL);
     
 #if DISCORD_LOGGING
     // Preparing for sleep
