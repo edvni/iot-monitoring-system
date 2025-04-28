@@ -13,4 +13,5 @@ idf_component_register(
     reporter
     firebase_api
     system_states
+    config_manager
 )

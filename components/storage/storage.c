@@ -1,6 +1,7 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 //#define LOG_LOCAL_LEVEL ESP_LOG_NONE
 #include "storage.h"
+#include "config_manager.h"
 #include "sensors.h"
 #include "system_states.h"
 #include "time_manager.h"
@@ -17,6 +18,7 @@
 #include <string.h>
 #include <math.h>
 #include <dirent.h> 
+#include "battery_monitor.h"
 
 #define FIRST_BOOT_KEY "first_boot"
 
@@ -99,87 +101,110 @@ static void generate_sensor_filename(char *filename, size_t max_length, const ch
 
 // Saving the measurement to SPIFFS
 esp_err_t storage_save_measurement(ruuvi_measurement_t *measurement) {
-   if (!check_spiffs_status()) {
-       return ESP_ERR_INVALID_STATE;
-   }
+    if (!check_spiffs_status()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (measurement == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Generate filename for the sensor
+    char sensor_filename[64];
+    generate_sensor_filename(sensor_filename, sizeof(sensor_filename), measurement->mac_address);
+    
+    // Try to read existing document
+    cJSON *firestore_doc = NULL;
+    FILE *f = fopen(sensor_filename, "r");
+    
+    if (f != NULL) {
+        // Get file size
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);
 
-   // Generating a file name based on the MAC address
-   char sensor_filename[64];
-   generate_sensor_filename(sensor_filename, sizeof(sensor_filename), measurement->mac_address);
+        if (fsize > 0) {
+            char *firestore_str = malloc(fsize + 1);
+            if (firestore_str != NULL) {
+                if (fread(firestore_str, 1, fsize, f) == (size_t)fsize) {
+                    firestore_str[fsize] = '\0';
+                    firestore_doc = cJSON_Parse(firestore_str);
+                }
+                free(firestore_str);
+            }
+        }
+        fclose(f);
+    }
+    
+    // Get battery information
+    battery_info_t battery_info;
+    esp_err_t battery_result = battery_monitor_read(&battery_info);
+    
+    // Creating or updating the Firestore document
+    if (battery_result == ESP_OK) {
+        firestore_doc = json_helper_create_or_update_firestore_document(firestore_doc, measurement->mac_address, 
+                                                                       battery_info.voltage_mv, battery_info.level);
+    } else {
+        // If battery info is not available, use default values
+        firestore_doc = json_helper_create_or_update_firestore_document(firestore_doc, measurement->mac_address, 0, 0);
+        ESP_LOGW(TAG, "Failed to get battery information, using default values");
+    }
+    
+    if (firestore_doc == NULL) {
+        ESP_LOGE(TAG, "Failed to create Firestore document");
+        return ESP_FAIL;
+    }
+    
+    // Adding the measurement to the document
+    esp_err_t result = json_helper_add_measurement_to_firestore(firestore_doc, measurement);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add measurement to Firestore document");
+        cJSON_Delete(firestore_doc);
+        return result;
+    }
    
-   ESP_LOGI(TAG, "Saving measurement from %s to file: %s", measurement->mac_address, sensor_filename);
+    // Getting the size of the measurements array for logging
+    cJSON *fields = cJSON_GetObjectItem(firestore_doc, "fields");
+    cJSON *measurements = cJSON_GetObjectItem(fields, "measurements");
+    cJSON *array_value = cJSON_GetObjectItem(measurements, "arrayValue");
+    cJSON *values = cJSON_GetObjectItem(array_value, "values");
+    ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values));
+   
+    // Saving the updated Firestore structure
+    char *firestore_json_str = cJSON_PrintUnformatted(firestore_doc);
+    cJSON_Delete(firestore_doc);
+   
+    if (firestore_json_str == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+   
+    f = fopen(sensor_filename, "w");
+    if (f == NULL) {
+        free(firestore_json_str);
+        return ESP_FAIL;
+    }
+   
+    fprintf(f, "%s", firestore_json_str);
+    fclose(f);
+    free(firestore_json_str);
+   
+    // Checking the file
+    struct stat st;
+    if (stat(sensor_filename, &st) == 0) {
+        ESP_LOGI(TAG, "File saved for sensor %s: %ld bytes", measurement->mac_address, st.st_size);
+    } else {
+        ESP_LOGE(TAG, "File verification failed!");
+        return ESP_FAIL;
+    }
 
-   // Loading the existing Firestore structure, if it exists
-   cJSON *firestore_doc = NULL;
-   FILE* f = fopen(sensor_filename, "r");
-   if (f != NULL) {
-       // If the file exists, load the structure
-       fseek(f, 0, SEEK_END);
-       long fsize = ftell(f);
-       fseek(f, 0, SEEK_SET);
+    // Synchronization of the file system after saving
+    esp_err_t sync_ret = storage_sync();
+    if (sync_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to sync file system after saving measurement");
+        return sync_ret;
+    }
 
-       if (fsize > 0) {
-           char *firestore_str = malloc(fsize + 1);
-           if (firestore_str != NULL) {
-               if (fread(firestore_str, 1, fsize, f) == (size_t)fsize) {
-                   firestore_str[fsize] = '\0';
-                   firestore_doc = cJSON_Parse(firestore_str);
-               }
-               free(firestore_str);
-           }
-       }
-       fclose(f);
-   }
-   
-   // Creating or updating the Firestore document
-   firestore_doc = json_helper_create_or_update_firestore_document(firestore_doc, measurement->mac_address);
-   if (firestore_doc == NULL) {
-       ESP_LOGE(TAG, "Failed to create Firestore document");
-       return ESP_FAIL;
-   }
-   
-   // Adding the measurement to the document
-   esp_err_t result = json_helper_add_measurement_to_firestore(firestore_doc, measurement);
-   if (result != ESP_OK) {
-       ESP_LOGE(TAG, "Failed to add measurement to Firestore document");
-       cJSON_Delete(firestore_doc);
-       return result;
-   }
-   
-   // Getting the size of the measurements array for logging
-   cJSON *fields = cJSON_GetObjectItem(firestore_doc, "fields");
-   cJSON *measurements = cJSON_GetObjectItem(fields, "measurements");
-   cJSON *array_value = cJSON_GetObjectItem(measurements, "arrayValue");
-   cJSON *values = cJSON_GetObjectItem(array_value, "values");
-   ESP_LOGI(TAG, "Measurements array size after adding: %d", cJSON_GetArraySize(values));
-   
-   // Saving the updated Firestore structure
-   char *firestore_json_str = cJSON_PrintUnformatted(firestore_doc);
-   cJSON_Delete(firestore_doc);
-   
-   if (firestore_json_str == NULL) {
-       return ESP_ERR_NO_MEM;
-   }
-   
-   f = fopen(sensor_filename, "w");
-   if (f == NULL) {
-       free(firestore_json_str);
-       return ESP_FAIL;
-   }
-   
-   fprintf(f, "%s", firestore_json_str);
-   fclose(f);
-   free(firestore_json_str);
-   
-   // Checking the file
-   struct stat st;
-   if (stat(sensor_filename, &st) == 0) {
-       ESP_LOGI(TAG, "File saved for sensor %s: %ld bytes", measurement->mac_address, st.st_size);
-   } else {
-       ESP_LOGE(TAG, "File verification failed!");
-   }
-
-   return ESP_OK;
+    return ESP_OK;
 }
 
 // Storaging the logs in SPIFFS
@@ -209,7 +234,6 @@ esp_err_t storage_append_log(const char* log_message) {
 
 // Getting the logs from SPIFFS
 char* storage_get_logs(void) {
-    #if DISCORD_LOGGING
     static const char* TAG = "storage";
     
     if (!check_spiffs_status()) {
@@ -296,9 +320,6 @@ char* storage_get_logs(void) {
     ESP_LOGI(TAG, "Successfully read %zu bytes from log file", total_read);
     
     return log_str;
-    #else
-    return NULL;
-    #endif
 }
 
 // Function for getting a list of sensor files

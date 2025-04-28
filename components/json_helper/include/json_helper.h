@@ -41,9 +41,11 @@ void json_helper_generate_document_id(const char *time_str, const char *formatte
  * 
  * @param existing_doc Existing document or NULL
  * @param mac_address MAC address of the tag/device
+ * @param battery_voltage_mv Battery voltage in millivolts
+ * @param battery_level Battery level percentage (0-100%)
  * @return cJSON* Firestore document structure
  */
-cJSON* json_helper_create_or_update_firestore_document(cJSON* existing_doc, const char* mac_address);
+cJSON* json_helper_create_or_update_firestore_document(cJSON* existing_doc, const char* mac_address, uint32_t battery_voltage_mv, int battery_level);
 
 /**
  * @brief Add a measurement to the Firestore document

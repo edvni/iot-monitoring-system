@@ -5,7 +5,7 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>  // For unlink function
+#include <unistd.h> 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -13,6 +13,20 @@
 #include "discord_api.h"
 
 static const char *TAG = "DISCORD_TASKS";
+
+// Function to clear log file
+esp_err_t clear_discord_logs(void) {
+    const char* LOG_FILE = "/spiffs/debug_log.txt";
+    ESP_LOGI(TAG, "Clearing log file");
+    
+    if (unlink(LOG_FILE) == 0) {
+        ESP_LOGI(TAG, "Log file cleared successfully");
+        return ESP_OK;
+    } else {
+        ESP_LOGE(TAG, "Failed to clear log file");
+        return ESP_FAIL;
+    }
+}
 
 // Discord message sending task structure
 typedef struct {
@@ -112,7 +126,7 @@ esp_err_t send_measurements_with_task_retries(const char* measurements, int max_
     esp_err_t ret = ESP_FAIL;
     
     for (int i = 0; i < max_retries; i++) {
-        // Sending measurements using task - прямой вызов без разбивки на части
+        // Sending measurements using task
         ret = discord_send_message_safe(measurements);
         if (ret == ESP_OK) {
             return ESP_OK;
@@ -140,12 +154,15 @@ esp_err_t send_logs_with_task_retries(int max_retries) {
     ESP_LOGI(TAG, "Retrieved logs: length=%d bytes", strlen(logs));
     
     for (int i = 0; i < max_retries; i++) {
-        // Sending logs using task - прямой вызов без разбивки на части
+        // Sending logs using task 
         ret = discord_send_message_safe(logs);
         if (ret == ESP_OK) {
             // Clearing the log file after successful sending
-            ESP_LOGI(TAG, "Successfully sent logs, clearing log file");
-            unlink("/spiffs/debug_log.txt");
+            ESP_LOGI(TAG, "Successfully sent logs");
+            ret = clear_discord_logs();
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to clear logs after successful sending");
+            }
             free(logs);
             return ESP_OK;
         }

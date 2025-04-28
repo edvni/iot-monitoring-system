@@ -314,7 +314,7 @@ static esp_err_t process_and_send_sensor_data(const char *json_data) {
         return ESP_ERR_NO_MEM;
     }
     
-    json_helper_format_mac_address(mac_address, formatted_mac, 18);
+    //json_helper_format_mac_address(mac_address, formatted_mac, 18);
     
     // Generating document ID
     char *document_id = heap_caps_malloc(64, MALLOC_CAP_8BIT);
@@ -326,12 +326,13 @@ static esp_err_t process_and_send_sensor_data(const char *json_data) {
         return ESP_ERR_NO_MEM;
     }
     
-    json_helper_generate_document_id(time_str, formatted_mac, document_id, 64);
+    // json_helper_generate_document_id(time_str, formatted_mac, document_id, 64);
+    json_helper_generate_document_id(time_str, mac_address, document_id, 64);
     
     ESP_LOGI(TAG, "Using custom document ID: %s", document_id);
     
     // Sending data to Firestore
-    ret = firebase_send_streamed_data("daily_measurements", document_id, json_data);
+    ret = firebase_send_streamed_data("daily_measurements_Vladimir", document_id, json_data);
     
     // Freeing allocated memory
     free(document_id);
