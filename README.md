@@ -1,3 +1,11 @@
+# IoT environmental monitoring system
+This IoT project is a remote environmental monitoring system that:
+1. **Collects data** from multimple Bluetooth sensors
+2. **Stores measurements** locally
+3. **Periodically sends measurements** data to Firebase over GSM
+4. **Manages battery life** through optimized deep sleep cycles
+5. **Provides error recovery** through a state machine system
+
 # Getting started (21.3.2025)
 1. Clone repository
 2. Navigate to project directory `cd <project-directory>`
@@ -36,19 +44,23 @@ RuuviTag Pro Bluetooth Sensor<br>
 
 ### Main Components
 
-- **Main Logic** (`main.c`): Handles the overall workflow, including sensor data collection, storage and transmission.
-- **Storage** (`storage.c`): Manages data storage using SPIFFS (SPI Flash File System) and NVS (Non-Volatile Storage) for boot count, error flags, and system state.
-- **Sensors** (`sensor.c`): Interfaces with a RuuviTag sensor via BLE (Bluetooth Low Energy) to collect temperature and humidity data.
-- **GSM Modem** (`gsm_modem.cpp`)
-- **Discord API** (`discord_api.cpp`): Handles HTTP requests to send messages to a Discord channel.
-- **Power Management** (`power_management.c`): Configures power management settings for the ESP32.
-- **JSON Helper** (`json_helper.c`): Converts sensor data into JSON format for storage and transmission.
+- **Main Logic** (`main`): Central logic that manages the devices workflow.
+- **Storage** (`storage`): Handles persistent storage operations for sensor data and log messages.
+- **Sensors** (`sensors`): Manages Bluetooth sensors, their initialization, scanning, and data collection.
+- **GSM Modem** (`gsm_modem`): Controls the GSM modem for cellular network connectivity.
+- **Discord API** (`discord_api`): Provides integration with Discord for sending notifications and logs.
+- **Firebase API** (`firebase_api`): Handles communication with Firebase for data storage retrieval.
+- **Power Management** (`power_management`): Configures power management settings for the ESP32.
+- **JSON Helper** (`json_helper`): Converts sensor data into JSON format for storage and transmission.
+- **Reporter** (`reporter`): Used in logs reporting, including battery status.
+- **System States** (`system_states`): Defines and manages the system state machine for recovery and normal operations.
+- **Time Manager** (`time_manager`): Manages system time, synchronization, and timezone settings.
 
 ### Workflow
 
 - **Initialization**: The system initializes power management, storage, sensors and the GSM modem.
 - **Data collection**: The RuuviTag sensor data is collected via BLE and stored in SPIFFS.
-- **Data transmission**: After a certain number of boot cycles (`SEND_DATA_CYCLE`), the accumulated data is sent to Discord via the GSM module.
+- **Data transmission**: After a certain number of boot cycles (`SEND_DATA_CYCLE`), the accumulated data is sent to Firebase via the GSM module.
 - **Error handling**: If an error occurs (e.g., GSM initialization fails), the system logs the error and restarts.
 - **Sleep mode**: The ESP32 enters deep sleep mode after each cycle to save power.
 
@@ -64,7 +76,7 @@ RuuviTag Pro Bluetooth Sensor<br>
 - The system waits up to 10 seconds to receive sensor data.
 
 3. **Data transmission**:
-- After `SEND_DATA_CYCLE` boot cycles, the system sends the accumulated data to Discord.
+- After `SEND_DATA_CYCLE` boot cycles, the system sends the accumulated data to Firebase Cloud Firestore.
 - If the transmission fails, it retries up to 3 times.
 
 4. **Sleep mode**:
