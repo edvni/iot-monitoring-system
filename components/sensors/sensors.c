@@ -204,18 +204,18 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg) {
     return 0;
 }
 
-// Внутренний коллбэк для обработки данных от RuuviTag
+// Internal callback for processing data from RuuviTag
 static void internal_ruuvi_data_callback(ruuvi_measurement_t *measurement) {
     esp_err_t ret = storage_save_measurement(measurement);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save measurement from %s", measurement->mac_address);
     } else {
         ESP_LOGI(TAG, "Successfully saved data from %s", measurement->mac_address);
-        s_data_received = true; // Устанавливаем внутренний флаг
+        s_data_received = true; // Set internal flag
     }
 }
 
-// Новые функции для управления флагом получения данных
+// New functions for managing data received flag
 void sensors_reset_data_received_flag(void) {
     s_data_received = false;
 }
@@ -228,11 +228,11 @@ void sensors_set_data_received(void) {
     s_data_received = true;
 }
 
-// Изменённая функция инициализации
+// Changed initialization function
 esp_err_t sensors_init(void) {
     int rc;
 
-    // Используем внутренний коллбэк
+    // Use internal callback
     measurement_callback = internal_ruuvi_data_callback;
     
     // Initialize sensor status

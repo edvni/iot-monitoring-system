@@ -5,6 +5,7 @@
 #include "time_manager.h"
 #include <string.h>
 #include <math.h>
+#include <inttypes.h>
 
 static const char *TAG = "json_helper";
 
@@ -84,7 +85,7 @@ void json_helper_generate_document_id(const char *time_str, const char *formatte
 }
 
 // Creates a new Firestore document structure or updates an existing one
-cJSON* json_helper_create_or_update_firestore_document(cJSON* existing_doc, const char* mac_address) {
+cJSON* json_helper_create_or_update_firestore_document(cJSON* existing_doc, const char* mac_address, uint32_t battery_voltage_mv, int battery_level) {
     cJSON *firestore_doc = existing_doc;
     cJSON *firestore_fields = NULL;
     cJSON *measurements_field = NULL;
@@ -115,6 +116,21 @@ cJSON* json_helper_create_or_update_firestore_document(cJSON* existing_doc, cons
         cJSON *day_field = cJSON_CreateObject();
         cJSON_AddStringToObject(day_field, "stringValue", day);
         cJSON_AddItemToObject(firestore_fields, "day", day_field);
+        
+        // Add battery information
+        char battery_voltage_str[10];
+        char battery_level_str[5];
+        
+        snprintf(battery_voltage_str, sizeof(battery_voltage_str), "%" PRIu32, battery_voltage_mv);
+        snprintf(battery_level_str, sizeof(battery_level_str), "%d", battery_level);
+        
+        cJSON *battery_voltage_field = cJSON_CreateObject();
+        cJSON_AddStringToObject(battery_voltage_field, "stringValue", battery_voltage_str);
+        cJSON_AddItemToObject(firestore_fields, "battery_voltage", battery_voltage_field);
+        
+        cJSON *battery_level_field = cJSON_CreateObject();
+        cJSON_AddStringToObject(battery_level_field, "stringValue", battery_level_str);
+        cJSON_AddItemToObject(firestore_fields, "battery_level", battery_level_field);
         
         // Create an array of measurements
         measurements_field = cJSON_CreateObject();

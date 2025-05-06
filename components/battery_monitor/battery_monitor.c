@@ -8,8 +8,8 @@ static const char *TAG = "BATTERY";
 #define BAT_ADC_CHANNEL     ADC_CHANNEL_7  // GPIO 35
 #define BAT_ADC_ATTEN       ADC_ATTEN_DB_12
 #define BAT_ADC_BITWIDTH    ADC_BITWIDTH_12
-#define BATT_MIN_MV         3000        // Minimum voltage (3V)
-#define BATT_MAX_MV         4150        // Maximum voltage (4.15V)
+#define BATT_MIN_MV         3300        // Minimum voltage (3V)
+#define BATT_MAX_MV         4050        // Maximum voltage (4.05V)
 
 static adc_oneshot_unit_handle_t adc1_handle;
 

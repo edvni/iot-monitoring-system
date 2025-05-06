@@ -54,7 +54,6 @@ esp_err_t send_initial_discord_message(void);
  */
 esp_err_t send_measurements_with_task_retries(const char* measurements, int max_retries);
 
-
 /**
  * @brief Send logs to Discord channel using a separate task with larger stack
  * 
@@ -62,6 +61,13 @@ esp_err_t send_measurements_with_task_retries(const char* measurements, int max_
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t send_logs_with_task_retries(int max_retries);
+
+/**
+ * @brief Clear Discord log file
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t clear_discord_logs(void);
 
 #ifdef __cplusplus
 }

@@ -1,9 +1,4 @@
 #include <stdio.h>
-
-// Global logging definitions. If true, logging will be enabled.
-#define DISCORD_LOGGING false
-#define SYSTEM_LOGGING false
-
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_pm.h" 
@@ -30,14 +25,10 @@
 #include "time_manager.h"
 #include "battery_monitor.h"
 #include "firebase_api.h"
+#include "config_manager.h"
 
 
 static const char *TAG = "main";
-#define CONFIG_NIMBLE_CPP_LOG_LEVEL 0
-#define SECONDS_IN_MICROS 1000000ULL
-#define SEND_DATA_CYCLE 144  // For testing 3
-#define TRIGGER_INTERVAL    (60 * SECONDS_IN_MICROS) // defined in seconds (600 seconds)
-
 
 // Main function
 void app_main(void)
@@ -58,6 +49,7 @@ void app_main(void)
     bool network_initialized = false;
     bool data_from_storage_sent = false;
     bool first_boot = false;
+    bool error = false;
     //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
     
     // Power management initialization
@@ -115,6 +107,7 @@ void app_main(void)
         
         // Setting the state for the first block
         set_system_state(STATE_FIRST_BLOCK_RECOVERY);
+        ESP_ERROR_CHECK(storage_sync());
         vTaskDelay(pdMS_TO_TICKS(500));
 
 first_block_init:
@@ -122,6 +115,7 @@ first_block_init:
         ret = gsm_modem_init();
         if (ret != ESP_OK) {
             storage_append_log("GSM modem init failed in first boot");
+            error = true;
             unsuccessful_init(TAG);
         } else {
             network_initialized = true;
@@ -132,17 +126,20 @@ first_block_init:
                 time_manager_set_from_timestamp(network_time); // Synchronize time
             } else {
                 storage_append_log("Failed to synchronize time with NTP");
+                error = true;
             }
         }
 
         // Setting the normal state
         set_system_state(STATE_NORMAL);
+        storage_sync();
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Discord API initialization for the first message
         ret = sending_report_to_discord();
         if (ret != ESP_OK) {
             storage_append_log("Failed to send first boot message");
+            error = true;
         }
         
         // Mark first boot as completed
@@ -174,13 +171,13 @@ first_block_init:
                 
                 // Reset the sensor status
                 sensors_reset_status();
-                // Сброс флага получения данных 
+                // Reset the data received flag
                 sensors_reset_data_received_flag();
                 
                 vTaskDelay(pdMS_TO_TICKS(500)); // Small pause between attempts
             }
             
-            // Sensors initialization - больше не требует передачи коллбэка
+            // Sensors initialization 
             ESP_ERROR_CHECK(sensors_init());
             
             // Waiting for data
@@ -217,6 +214,7 @@ first_block_init:
         // Write to log information about received sensors
         if (!sensors_any_data_received()) {
             storage_append_log("Failed to receive any sensor data");
+            error = true;
         } else {
             char log_message[64];
             snprintf(log_message, sizeof(log_message), "Received data from %d/%d sensors after %d attempts", 
@@ -231,7 +229,7 @@ first_block_init:
                          sensors_get_received_count(), TOTAL_SENSORS);
             }
             
-            // Проверка получения данных через функцию из sensors
+            // Check data reception through the sensors function
             if (!sensors_is_data_received()) {
                 sensors_set_data_received();
             }
@@ -245,6 +243,7 @@ first_block_init:
     } else {
 
         storage_append_log("Error in previous cycle was detected, skipping data collection");
+        error = true;
     }
 
     boot_count = get_boot_count();
@@ -255,6 +254,7 @@ first_block_init:
 
         // Setting the state for the second block
         set_system_state(STATE_SECOND_BLOCK_RECOVERY);
+        ESP_ERROR_CHECK(storage_sync());
         vTaskDelay(pdMS_TO_TICKS(500));
 
 second_block_init:
@@ -262,6 +262,7 @@ second_block_init:
         ret = gsm_modem_init();
         if (ret != ESP_OK) {
             storage_append_log("GSM modem init failed for data sending");
+            error = true;
             unsuccessful_init(TAG);
         } else {
             network_initialized = true;
@@ -273,16 +274,19 @@ second_block_init:
             time_manager_set_from_timestamp(network_time); // Synchronize time
         } else {
             storage_append_log("Failed to synchronize time with NTP");
+            error = true;
         }
 
         // Setting the normal state
         set_system_state(STATE_NORMAL);
+        ESP_ERROR_CHECK(storage_sync());
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Firebase API initialization 
         ret = firebase_init();
         if (ret != ESP_OK) {
             storage_append_log("Firebase init failed for data sending");
+            error = true;
             unsuccessful_init(TAG);
         }
     
@@ -303,9 +307,11 @@ second_block_init:
             } else if (ret == ESP_ERR_NOT_FOUND) {
                 // Files not found
                 storage_append_log("No sensor files found");
+                error = true;
             } else {
                 // General error
                 storage_append_log("Failed to send any files");
+                error = true;
             }
         }
 
@@ -313,6 +319,7 @@ second_block_init:
         ret = sending_report_to_discord();
         if (ret != ESP_OK) {
             storage_append_log("Failed to send message about battery status");
+            error = true;
         }
             
         storage_append_log("Done");
@@ -329,6 +336,7 @@ second_block_init:
     if (written < 0 || written >= (int)sizeof(log_buf)) {
         ESP_LOGE(TAG, "Error formatting boot count log");
         storage_append_log("Error logging final boot count");
+        error = true;
     } else {
         storage_append_log(log_buf);
     }
@@ -336,46 +344,64 @@ second_block_init:
     
     // Sending logs if data was sent
     #if DISCORD_LOGGING
-        if (data_from_storage_sent && !network_initialized) {
+        if (data_from_storage_sent || error) {
             storage_append_log("Sending logs");
 
             // Setting the state for the third block
             set_system_state(STATE_THIRD_BLOCK_RECOVERY);
+            ESP_ERROR_CHECK(storage_sync());
             vTaskDelay(pdMS_TO_TICKS(500));
 
     third_block_init:
-
-            // Modem initialization for logs sending
-            ret = gsm_modem_init();
-            if (ret != ESP_OK) {
-                storage_append_log("GSM modem init failed for logs");
-                goto sleep_prepare;
-            } else {
-                network_initialized = true;
-
-                // Add time synchronization
-                time_t network_time = gsm_get_network_time();
-                if (network_time > 0) {
-                    time_manager_set_from_timestamp(network_time); // Synchronize time
+            // Only initialize modem if not already initialized
+            if (!network_initialized) {
+                // Modem initialization for logs sending
+                ret = gsm_modem_init();
+                if (ret != ESP_OK) {
+                    storage_append_log("GSM modem init failed for logs");
+                    error = true;
+                    goto sleep_prepare;
                 } else {
-                    storage_append_log("Failed to synchronize time with NTP");
+                    network_initialized = true;
+
+                    // Add time synchronization
+                    time_t network_time = gsm_get_network_time();
+                    if (network_time > 0) {
+                        time_manager_set_from_timestamp(network_time); // Synchronize time
+                    } else {
+                        storage_append_log("Failed to synchronize time with NTP");
+                        error = true;
+                    }
                 }
             }
 
             // Setting the normal state
             set_system_state(STATE_NORMAL);
+            ESP_ERROR_CHECK(storage_sync());
             vTaskDelay(pdMS_TO_TICKS(500));
             
             // Discord API initialization for logs sending
             ret = discord_init();
             if (ret != ESP_OK) {
                 storage_append_log("Discord API init failed for logs");
+                error = true;
                 gsm_modem_deinit();
                 goto sleep_prepare;
+            } else {
+                ESP_LOGI(TAG, "Sending logs to Discord");
+                storage_append_log("Sending logs to Discord");
+                send_logs_with_task_retries(3);
             }
         }
     #endif
     
+    esp_err_t clear_ret = clear_discord_logs();
+    if (clear_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to clear Discord logs");
+    } else {
+        ESP_LOGI(TAG, "Discord logs cleared successfully");
+    }
+
 
     // Final deinitialization of GSM modem
     if (first_boot && network_initialized) {
@@ -390,13 +416,14 @@ second_block_init:
     // Preparing for sleep
     sleep_prepare:
 #endif
+
     // Synchronizing the file system before sleep to ensure the saving of all data
     ESP_ERROR_CHECK(storage_sync());
     
     // Calculate execution time and remaining sleep time
     int64_t current_time = esp_timer_get_time();
     int64_t execution_time = current_time - start_time;
-    int64_t sleep_time = TRIGGER_INTERVAL - execution_time;
+    int64_t sleep_time = TRIGGER_INTERVAL - execution_time + COMPENSATION_INTERVAL;
     if (sleep_time < 0) {
         sleep_time = 0;
     }

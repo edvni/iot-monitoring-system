@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "gsm_modem.h"
 #include "esp_system.h"
+#include "config_manager.h"
 
 #define FIRST_BOOT_KEY "first_boot"
 
