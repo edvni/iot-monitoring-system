@@ -1,3 +1,30 @@
+# IoT Environmental Monitoring System
+
+A robust IoT solution for remote environmental monitoring using ESP32 and RuuviTag sensors. The system collects environmental data via Bluetooth, stores it locally, and transmits it to Firebase over GSM cellular network.
+
+## Key Features
+
+- 📡 **Multi-sensor Support**: Collects data from multiple RuuviTag Pro Bluetooth sensors
+- 💾 **Local Storage**: Efficiently stores measurements in SPIFFS
+- 📱 **GSM Connectivity**: Reliable data transmission over cellular network
+- 🔋 **Power Optimization**: Smart deep sleep cycles for extended battery life
+- 🔄 **Error Recovery**: Robust state machine system for automatic recovery
+- 📊 **Cloud Integration**: Seamless data synchronization with Firebase
+- 🔔 **Discord Notifications**: Real-time alerts and system status updates
+
+## Hardware
+
+- **Main Board**: Lilygo T-A7670E (ESP32 + 4G LTE CAT1)
+- **Sensors**: RuuviTag Pro Bluetooth Environmental Sensors
+
+## Technical Stack
+
+- ESP-IDF v5.4.0
+- Firebase Cloud Firestore
+- Discord API
+- BLE (Bluetooth Low Energy)
+- GSM/LTE Cellular Network
+
 # IoT environmental monitoring system
 This IoT project is a remote environmental monitoring system that:
 1. **Collects data** from multimple Bluetooth sensors
@@ -81,3 +108,9 @@ RuuviTag Pro Bluetooth Sensor<br>
 
 4. **Sleep mode**:
 - After completing the cycle, the ESP32 enter deep sleep for `TIME_TO_SLEEP` seconds.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2024 IoT Environmental Monitoring System

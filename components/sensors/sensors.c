@@ -25,10 +25,8 @@ static const char *TAG = "SENSORS";
  * Example format of MAC addresses: "XX:XX:XX:XX:XX:XX" (all uppercase letters)
  */
 static const char *TARGET_MACS[] = {
-    "DB:C3:58:D9:03:70" // Vladimir RuuviTag
-    //"EE:C4:12:FD:CA:DF" // Vladimir RuuviTag
-    //"C4:D9:12:ED:63:C6", // Edvard RuuviTag
-    //"C5:71:D4:30:42:34" // Johannes RuuviTag
+    "DB:C3:58:D9:13:71",
+    //"EE:C4:18:FD:CA:DD" 
 };
 #define MAX_SENSORS (sizeof(TARGET_MACS) / sizeof(TARGET_MACS[0]))
 
