@@ -60,14 +60,8 @@ This IoT project is a remote environmental monitoring system that:
 
 ### Hardware
 
-- **Development board**<br>
-Lilygo T-A7670E Wireless module ESP32 Chip 4G LTE CAT1 MCU32<br>
-![lilygo chip](images/hardware/lilygo_t-a7670e.png)
-
-- **Sensor**<br>
-RuuviTag Pro Bluetooth Sensor<br>
-![ruuvitag sensor](images/hardware/ruuvitagpro_exploded.png)
-
+- **Development board, RuuviTag Pro sensor with accessories, and Web UI**<br>
+![system_image](docs/system_image.png)
 
 ### Main Components
 
